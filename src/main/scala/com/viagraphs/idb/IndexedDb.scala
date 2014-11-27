@@ -4,39 +4,31 @@ import monifu.concurrent.Scheduler
 import monifu.reactive.Observable
 import monifu.reactive.channels.{AsyncChannel, PublishChannel, ReplayChannel}
 import org.scalajs.dom.{ErrorEvent, Event, IDBCursorWithValue, IDBDatabase, IDBObjectStore, IDBOpenDBRequest, IDBVersionChangeEvent, console, window}
+import upickle.Aliases.{RW, W, R}
 
 import scala.collection.mutable.ListBuffer
 import scala.scalajs.js
 import scala.util.control.NonFatal
 
-class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Scheduler) {
+/**
+ * A store key might be :
+ *    Number primitive value, String primitive value, Date object, or Array object.
+ *    An Array is only a valid key if every item in the array is defined and is a valid key
+ *
+ * The object store can derive the key from one of three sources :
+ *    A key generator. A key generator generates a monotonically increasing numbers every time a key is needed.
+ *    Keys can be derived via a key path.
+ *    Keys can also be explicitly specified when a value is stored in the object store.
+
+ * A store value might be :
+ *    simple types such as String primitive values and Date objects as well as Object,
+ *    Array instances, File objects, Blob objects, ImageData objects, and so on
+ *
+ * MDN
+*/
+class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Scheduler) extends Implicits {
   import com.viagraphs.idb.IndexedDb._
   import upickle._
-
-  /**
-   * A store key might be :
-   *    Number primitive value, String primitive value, Date object, or Array object.
-   *    An Array is only a valid key if every item in the array is defined and is a valid key
-   *
-   * The object store can derive the key from one of three sources :
-   *    A key generator. A key generator generates a monotonically increasing numbers every time a key is needed.
-   *    Keys can be derived via a key path.
-   *    Keys can also be explicitly specified when a value is stored in the object store.
-
-   * A store value might be :
-   *    simple types such as String primitive values and Date objects as well as Object,
-   *    Array instances, File objects, Blob objects, ImageData objects, and so on
-   *
-   * MDN
-   */
-  sealed trait Compatible[T]
-  object Compatible {
-    implicit object StringOk extends Compatible[String]
-    implicit object IntOk extends Compatible[Int]
-    implicit object ArrayOk extends Compatible[Seq[_]]
-    implicit object UnitOk extends Compatible[Unit]
-    //TODO
-  }
 
   def close(): Unit = {
     underlying.map { db =>
@@ -108,7 +100,7 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
     }
   }
 
-  def getLast[K : Reader, V : Reader](storeName: String): Observable[(K,V)] = {
+  def getLast[K : R : ValidKey, V : R](storeName: String): Observable[(K,V)] = {
     getStore(storeName, ReadOnly).flatMap { store =>
       val ch = AsyncChannel[(K,V)]()
       val req = store.openCursor(null, "prev")
@@ -128,7 +120,7 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
     }
   }
 
-  def get[K : Writer, V : Reader](storeName: String, keys: K*): Observable[V] = {
+  def get[K : W : ValidKey, V : R](storeName: String, keys: K*): Observable[V] = {
     getStore(storeName, ReadOnly).flatMap { store =>
       val ch = PublishChannel[V]()
       def >>(it: Iterator[K]): Unit = {
@@ -161,7 +153,7 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
     }
   }
 
-  def add[K : ReadWriter, V : Writer](storeName: String, optKey: Option[K], values: V*): Observable[K] = {
+  def add[K : RW : ValidKey, V : W](storeName: String, optKey: Option[K], values: V*): Observable[K] = {
     getStore(storeName, ReadWrite).flatMap { store =>
       val ch = PublishChannel[K]()
       def >>(it: Iterator[V]): Unit = {
@@ -194,11 +186,11 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
     }
   }
 
-  def delete[K : Writer](storeName: String, keys: K*): Observable[Unit] = {
+  def delete[K : W : ValidKey](storeName: String, keys: K*): Observable[Unit] = {
     deleteInternally[K,Unit](storeName, ReplayChannel[Unit](), keys:_*)
   }
 
-  def getAndDelete[K : Writer, V : Reader](storeName: String, keys: K*): Observable[V] = {
+  def getAndDelete[K : W : ValidKey, V : R](storeName: String, keys: K*): Observable[V] = {
     get[K,V](storeName, keys:_*).buffer(keys.length).flatMap { values =>
       val ch = ReplayChannel[V]()
       ch.pushNext(values:_*)
@@ -206,7 +198,7 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
     }
   }
 
-  private def deleteInternally[K: Writer, V : Reader](storeName: String, ch: ReplayChannel[V], keys: K*): Observable[V] = {
+  private def deleteInternally[K: W : ValidKey, V](storeName: String, ch: ReplayChannel[V], keys: K*): Observable[V] = {
     getStore(storeName, ReadWrite).flatMap { store =>
       def >>(it: Iterator[K]): Unit = {
         if (it.hasNext) {

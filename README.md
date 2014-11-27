@@ -6,6 +6,7 @@ Indexed Database reactive (Rx) wrapper written in [scala.js](1) using [monifu](2
 Primarily it is trying to :
 * be type safe 
     * thanks to [uPickle](3) and its Reader/Writer type classes user just declares input/return types and uPickle does the rest
+    * a key validation type class doesn't let you store keys of unsupported types
 * be user friendly 
     * because there is too much mutability and confusion regarding request result value, versioning, transactions and error handling in IndexedDb API
     * Rx based API has a clean contract by definition
