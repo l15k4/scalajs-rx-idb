@@ -40,6 +40,16 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
     //TODO support more types
   }
 
+  def close(): Unit = {
+    underlying.map { db =>
+      try {
+        db.close()
+      } catch {
+        case NonFatal(ex) => throw new Exception(s"Unable to close database ${db.name}", ex)
+      }
+    }
+  }
+
   def getStore(name: String, txMode: TxAccessMode): Observable[IDBObjectStore] = {
     underlying.map { db =>
       try {
