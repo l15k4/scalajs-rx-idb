@@ -11,6 +11,7 @@ import scala.util.control.NonFatal
 
 class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Scheduler) {
   import com.viagraphs.idb.IndexedDb._
+  import upickle._
 
   /**
    * A store key might be :
@@ -32,12 +33,9 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
   object Compatible {
     implicit object StringOk extends Compatible[String]
     implicit object IntOk extends Compatible[Int]
-    implicit object DateOk extends Compatible[js.Date]
-    implicit object ArrayOk extends Compatible[js.Array[_]]
-    implicit object DynamicOk extends Compatible[js.Dynamic]
-    implicit object ObjDynamicOk extends Compatible[DynamicObject]
+    implicit object ArrayOk extends Compatible[Seq[_]]
     implicit object UnitOk extends Compatible[Unit]
-    //TODO support more types
+    //TODO
   }
 
   def close(): Unit = {
@@ -72,7 +70,7 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
   }
 
   def count(storeName: String): Observable[Int] = {
-    getStore(storeName, RW).flatMap { store =>
+    getStore(storeName, ReadWrite).flatMap { store =>
       val ch = AsyncChannel[Int]()
       val req = store.count()
       val tx = req.transaction
@@ -93,7 +91,7 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
   }
 
   def clear(storeName: String): Observable[Unit] = {
-    getStore(storeName, RW).flatMap { store =>
+    getStore(storeName, ReadWrite).flatMap { store =>
       Observable.create { observer =>
         val req = store.clear()
         val tx = req.transaction
@@ -110,14 +108,14 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
     }
   }
 
-  def getLast[K : Compatible, V : Compatible](storeName: String): Observable[(K,V)] = {
-    getStore(storeName, RO).flatMap { store =>
+  def getLast[K : Reader, V : Reader](storeName: String): Observable[(K,V)] = {
+    getStore(storeName, ReadOnly).flatMap { store =>
       val ch = AsyncChannel[(K,V)]()
       val req = store.openCursor(null, "prev")
       req.onsuccess = (e: Event) => {
         e.target.asInstanceOf[IDBOpenDBRequest].result match {
           case cursor: IDBCursorWithValue =>
-            ch.pushNext((cursor.key.asInstanceOf[K], cursor.value.asInstanceOf[V]))
+            ch.pushNext((readJs[K](json.readJs(cursor.key)), readJs[V](json.readJs(cursor.value))))
             ch.pushComplete()
           case cursor =>
             ch.pushComplete()
@@ -130,14 +128,15 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
     }
   }
 
-  def get[K : Compatible, V : Compatible](storeName: String, keys: K*): Observable[V] = {
-    getStore(storeName, RO).flatMap { store =>
+  def get[K : Writer, V : Reader](storeName: String, keys: K*): Observable[V] = {
+    getStore(storeName, ReadOnly).flatMap { store =>
       val ch = PublishChannel[V]()
       def >>(it: Iterator[K]): Unit = {
         if (it.hasNext) {
-          val req = store.get(it.next().asInstanceOf[js.Any])
+          val key = json.writeJs(writeJs[K](it.next())).asInstanceOf[js.Any]
+          val req = store.get(key)
           req.onsuccess = (e: Event) => {
-            ch.pushNext(req.result.asInstanceOf[V])
+            ch.pushNext(readJs[V](json.readJs(req.result)))
             >>(it)
           }
           req.onerror = (e: Event) => {
@@ -162,15 +161,15 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
     }
   }
 
-  def add[K : Compatible, V : Compatible](storeName: String, optKey: Option[K], values: V*): Observable[K] = {
-    getStore(storeName, RW).flatMap { store =>
+  def add[K : ReadWriter, V : Writer](storeName: String, optKey: Option[K], values: V*): Observable[K] = {
+    getStore(storeName, ReadWrite).flatMap { store =>
       val ch = PublishChannel[K]()
       def >>(it: Iterator[V]): Unit = {
         if (it.hasNext) {
-          val value = it.next().asInstanceOf[js.Any]
-          val req = optKey.fold(store.add(value))(key => store.add(value, key.asInstanceOf[js.Any]))
+          val value = json.writeJs(writeJs[V](it.next())).asInstanceOf[js.Any]
+          val req = optKey.fold(store.add(value))(key => store.add(value, json.writeJs(writeJs[K](key)).asInstanceOf[js.Any]))
           req.onsuccess = (e: Event) => {
-            ch.pushNext(req.result.asInstanceOf[K])
+            ch.pushNext(readJs[K](json.readJs(req.result))) //TODO what if Some optKey ?
             >>(it)
           }
           req.onerror = (e: Event) => {
@@ -195,23 +194,24 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
     }
   }
 
-  def delete[K : Compatible, V : Compatible](storeName: String, keys: K*): Observable[Unit] = {
+  def delete[K : Writer](storeName: String, keys: K*): Observable[Unit] = {
     deleteInternally[K,Unit](storeName, ReplayChannel[Unit](), keys:_*)
   }
 
-  def getAndDelete[K : Compatible, V : Compatible](storeName: String, keys: K*): Observable[V] = {
+  def getAndDelete[K : Writer, V : Reader](storeName: String, keys: K*): Observable[V] = {
     get[K,V](storeName, keys:_*).buffer(keys.length).flatMap { values =>
       val ch = ReplayChannel[V]()
       ch.pushNext(values:_*)
-      deleteInternally(storeName, ch, keys:_*)
+      deleteInternally[K,V](storeName, ch, keys:_*)
     }
   }
 
-  private def deleteInternally[K: Compatible, V : Compatible](storeName: String, ch: ReplayChannel[V], keys: K*): Observable[V] = {
-    getStore(storeName, RW).flatMap { store =>
+  private def deleteInternally[K: Writer, V : Reader](storeName: String, ch: ReplayChannel[V], keys: K*): Observable[V] = {
+    getStore(storeName, ReadWrite).flatMap { store =>
       def >>(it: Iterator[K]): Unit = {
         if (it.hasNext) {
-          val req = store.delete(it.next().asInstanceOf[js.Any])
+          val key = json.writeJs(writeJs[K](it.next())).asInstanceOf[js.Any]
+          val req = store.delete(key)
           req.onsuccess = (e: Event) => {
             >>(it)
           }
@@ -239,7 +239,6 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
 }
 
 object IndexedDb {
-  type DynamicObject = js.Object with js.Dynamic
   /**
    * Init modes are primarily designed for self explanatory purposes because IndexedDB API is quite ambiguous in this matter
    */
@@ -269,15 +268,15 @@ object IndexedDb {
     def value: String
   }
 
-  object RW extends TxAccessMode {
+  object ReadWrite extends TxAccessMode {
     val value = "readwrite" /*(IDBTransaction.READ_WRITE : UndefOr[String]).getOrElse("readwrite")*/
   }
 
-  object RO extends TxAccessMode {
+  object ReadOnly extends TxAccessMode {
     val value = "readonly" /*(IDBTransaction.READ_ONLY : UndefOr[String]).getOrElse("readonly")*/
   }
 
-  object VC extends TxAccessMode {
+  object VersionChange extends TxAccessMode {
     val value = "versionchange" /*(IDBTransaction.VERSION_CHANGE : UndefOr[String]).getOrElse("versionchange")*/
   }
 

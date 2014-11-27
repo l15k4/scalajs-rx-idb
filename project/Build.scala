@@ -15,12 +15,13 @@ object Build extends sbt.Build {
       .settings(
         organization := "com.viagraphs",
         name := "scalajs-rx-idb",
-        version := "0.0.1",
+        version := "0.0.2",
         scalaVersion := "2.11.2",
         scalacOptions ++= Seq("-unchecked", "-feature"),
         libraryDependencies ++= Seq(
           "org.scala-lang.modules.scalajs" %%% "scalajs-dom" % "0.7-SNAPSHOT",
           "org.monifu" %%% "monifu-rx-js" % "0.14.1",
+          "com.lihaoyi" %%% "upickle" % "0.2.6-SNAPSHOT",
           "com.lihaoyi" %%% "utest" % "0.2.6-SNAPSHOT" % "test"
         ),
         requiresDOM := true,

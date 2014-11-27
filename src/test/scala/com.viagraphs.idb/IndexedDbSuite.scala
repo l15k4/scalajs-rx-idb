@@ -7,7 +7,8 @@ import utest._
 
 import scala.concurrent.Future
 import scala.scalajs.js.Dynamic.{literal => lit}
-import scala.scalajs.js.{JSON, Object}
+
+case class AnInstance(a: String, b: Int, c: Map[Int,String])
 
 object IndexedDbSuite extends TestSuites {
 
@@ -18,16 +19,16 @@ object IndexedDbSuite extends TestSuites {
 
     "add-and-getAndDelete-objects"- {
       val dbName = "add-and-getAndDelete-objects"
-      val obj1 = lit("x" -> 0)
-      val obj2 = lit("y" -> 1)
+      val obj1 = Map("x" -> 0)
+      val obj2 = Map("y" -> 1)
       val db = IndexedDb(recreateDB(dbName))
-      db.add[Int, DynamicObject](dbName, None, obj1, obj2).buffer(2).flatMap { keys =>
+      db.add[Int,Map[String,Int]](dbName, None, obj1, obj2).buffer(2).flatMap { keys =>
         assert(keys == Seq(1,2))
-        db.getAndDelete[Int, DynamicObject](dbName, keys:_*).buffer(2)
+        db.getAndDelete[Int,Map[String,Int]](dbName, keys:_*).buffer(2)
       }.asFuture.flatMap {
         case Some(values) =>
-          assert(Object.hasProperty(values(0), "x"))
-          assert(Object.hasProperty(values(1), "y"))
+          assert(values(0)("x") == 0)
+          assert(values(1)("y") == 1)
           db.count(dbName).asFuture.map { count =>
             assert(count.get == 0)
             count
@@ -70,14 +71,14 @@ object IndexedDbSuite extends TestSuites {
 
     "add-and-get-object"-{
       val dbName = "add-and-get-object"
-      val obj = lit("p" -> lit("ch" -> 0, "l" -> 0), "ch" -> lit("t" -> "edl"))
+      val obj = AnInstance("trol", 1, Map(1 -> "trol"))
       val db = IndexedDb(recreateDB(dbName))
-      db.add[Int, DynamicObject](dbName, None, obj).flatMap { case key =>
-        db.get[Int, DynamicObject](dbName, key)
+      db.add[Int, AnInstance](dbName, None, obj).flatMap { case key =>
+        db.get[Int, AnInstance](dbName, key)
       }.asFuture.flatMap {
         case Some(value) =>
-          assert(JSON.stringify(obj) == JSON.stringify(value))
-          Future.successful(JSON.stringify(value))
+          assert(obj == value)
+          Future.successful(value)
         case x => Future.failed(new Exception(s"$x unexpected from add-and-get-object"))
       }
     }
