@@ -198,6 +198,30 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
     }
   }
 
+  def getAndDeleteLast[K : R : ValidKey, V : R](storeName: String): Observable[(K,V)] = {
+    getStore(storeName, ReadWrite).flatMap { store =>
+      val ch = AsyncChannel[(K,V)]()
+      val req = store.openCursor(null, "prev")
+      val tx = store.transaction
+      tx.oncomplete = (e: Event) => {
+        ch.pushComplete()
+      }
+      tx.onerror = (e: Event) => {
+        ch.pushError(new Exception(s"Database.getAndDeleteLast($storeName) failed " + tx.error.name))
+      }
+      req.onsuccess = (e: Event) => {
+        e.target.asInstanceOf[IDBOpenDBRequest].result match {
+          case cursor: IDBCursorWithValue =>
+            ch.pushNext((readJs[K](json.readJs(cursor.key)), readJs[V](json.readJs(cursor.value))))
+            cursor.delete()
+          case cursor =>
+            ch.pushComplete()
+        }
+      }
+      ch
+    }
+  }
+
   private def deleteInternally[K: W : ValidKey, V](storeName: String, ch: ReplayChannel[V], keys: K*): Observable[V] = {
     getStore(storeName, ReadWrite).flatMap { store =>
       def >>(it: Iterator[K]): Unit = {

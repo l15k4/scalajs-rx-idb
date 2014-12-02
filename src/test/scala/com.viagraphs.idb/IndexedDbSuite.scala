@@ -126,6 +126,25 @@ object IndexedDbSuite extends TestSuites {
       }
     }
 
+    "get-and-delete-last" - {
+      val dbName = "get-and-delete-last"
+      val db = IndexedDb(recreateDB(dbName))
+      db.add[Int, String](dbName, None, (0 until 10).map(_.toString):_*).buffer(10).flatMap { keys =>
+        assert(keys == (1 to 10).toSeq)
+        db.getAndDeleteLast[Int, String](dbName).mergeMap { case (lastKey, lastValue) =>
+          assert(lastValue.toString == 9.toString)
+          assert(lastKey == 10)
+          db.getLast[Int, String](dbName)
+        }
+      }.asFuture.flatMap {
+        case Some((lastKey, lastValue)) =>
+          assert(lastValue.toString == 8.toString)
+          assert(lastKey == 9)
+          Future.successful(lastValue)
+        case x => Future.failed(new Exception(s"$x unexpected from get-last"))
+      }
+    }
+
     "get-last-on-empty-store"-{
       val dbName = "get-last-on-empty-store"
       val db = IndexedDb(recreateDB(dbName))
