@@ -4,8 +4,8 @@ import monifu.concurrent.Scheduler
 import monifu.reactive.Observable
 import monifu.reactive.channels.{AsyncChannel, PublishChannel, ReplayChannel}
 import org.scalajs.dom.{ErrorEvent, Event, IDBCursorWithValue, IDBDatabase, IDBObjectStore, IDBOpenDBRequest, IDBVersionChangeEvent, console, window}
+import upickle.Aliases.{R, RW, W}
 import upickle._
-import upickle.Aliases.{RW, W, R}
 
 import scala.collection.mutable.ListBuffer
 import scala.scalajs.js
@@ -27,8 +27,18 @@ import scala.util.control.NonFatal
  *
  * MDN
 */
-class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Scheduler) {
-  import IndexedDb._
+class IndexedDb private(val underlying: Observable[IDBDatabase], s: Scheduler) {
+  implicit val scheduler = s
+
+  def name: Observable[String] = {
+    underlying.map { db =>
+      try {
+        db.name
+      } catch {
+        case NonFatal(ex) => throw new Exception(s"Unable to get database name", ex)
+      }
+    }
+  }
 
   def close(): Unit = {
     underlying.map { db =>
@@ -254,6 +264,20 @@ class IndexedDb private(underlying: Observable[IDBDatabase])(implicit s: Schedul
   }
 }
 
+/**
+ * Type Class that puts a view bound on Key types. Value types are not restricted much so I don't handle that
+ */
+sealed trait ValidKey[T]
+object ValidKey {
+  implicit object StringOk extends ValidKey[String]
+  implicit object IntOk extends ValidKey[Int]
+  implicit object IntSeqOk extends ValidKey[Seq[Int]]
+  implicit object IntArrayOk extends ValidKey[Array[Int]]
+  implicit object StringSeqOk extends ValidKey[Seq[String]]
+  implicit object StringArrayOk extends ValidKey[Array[String]]
+  implicit object JsDateOk extends ValidKey[js.Date]
+}
+
 object IndexedDb {
   import scala.collection.immutable.TreeMap
   implicit def TreeMapW[K : W : Ordering, V : W]: W[TreeMap[K, V]] =  W[TreeMap[K, V]](
@@ -266,62 +290,7 @@ object IndexedDb {
     }
   )
 
-  /**
-   * Init modes are primarily designed for self explanatory purposes because IndexedDB API is quite ambiguous in this matter
-   */
-  sealed trait DbInitMode {
-    def name: String
-    def version: Int
-    def defineObjectStores: IDBDatabase => IDBObjectStore
-  }
-
-  case class NewDb(name: String, defineObjectStores: IDBDatabase => IDBObjectStore) extends DbInitMode {
-    def version = ???
-  }
-
-  case class RecreateDb(name: String, defineObjectStores: IDBDatabase => IDBObjectStore) extends DbInitMode {
-    def version = ???
-  }
-
-  case class UpgradeDb(name: String, version: Int, defineObjectStores: IDBDatabase => IDBObjectStore) extends DbInitMode
-
-  case class  OpenDb(name: String) extends DbInitMode {
-    def version: Int = ???
-    def defineObjectStores: (IDBDatabase) => IDBObjectStore = ???
-  }
-
-  //TODO these constants are typed as java.lang.String in scala-js-dom which throws an error if not implemented by browsers
-  sealed trait TxAccessMode {
-    def value: String
-  }
-
-  object ReadWrite extends TxAccessMode {
-    val value = "readwrite" /*(IDBTransaction.READ_WRITE : UndefOr[String]).getOrElse("readwrite")*/
-  }
-
-  object ReadOnly extends TxAccessMode {
-    val value = "readonly" /*(IDBTransaction.READ_ONLY : UndefOr[String]).getOrElse("readonly")*/
-  }
-
-  object VersionChange extends TxAccessMode {
-    val value = "versionchange" /*(IDBTransaction.VERSION_CHANGE : UndefOr[String]).getOrElse("versionchange")*/
-  }
-
-  /**
-   * Type Class that puts a view bound on Key types. Value types are not restricted much so I don't handle that
-   */
-  sealed trait ValidKey[T]
-  object ValidKey {
-    implicit object StringOk extends ValidKey[String]
-    implicit object IntOk extends ValidKey[Int]
-    implicit object IntSeqOk extends ValidKey[Seq[Int]]
-    implicit object IntArrayOk extends ValidKey[Array[Int]]
-    implicit object StringSeqOk extends ValidKey[Seq[String]]
-    implicit object StringArrayOk extends ValidKey[Array[String]]
-    implicit object JsDateOk extends ValidKey[js.Date]
-  }
-
-  def apply(mode: DbInitMode)(implicit s: Scheduler): IndexedDb = {
+  def apply(mode: IdbInitMode)(implicit s: Scheduler): IndexedDb = {
     val channel = AsyncChannel[Event]()
     val dbObservable = channel.map { event =>
       event.target.asInstanceOf[IDBOpenDBRequest].result.asInstanceOf[IDBDatabase]
@@ -364,7 +333,14 @@ object IndexedDb {
         }
     }
 
-    new IndexedDb(dbObservable)
+    mode match {
+      case m: Profiling =>
+        new IndexedDb(dbObservable, s) with Profiler
+      case _ =>
+        new IndexedDb(dbObservable, s)
+
+    }
+
   }
 
 }

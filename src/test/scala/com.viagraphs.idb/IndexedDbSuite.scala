@@ -1,6 +1,5 @@
 package com.viagraphs.idb
 
-import com.viagraphs.idb.IndexedDb._
 import monifu.concurrent.Scheduler
 import monifu.reactive.Observable
 import utest._
@@ -13,7 +12,7 @@ case class AnInstance(a: String, b: Int, c: Map[Int,String])
 object IndexedDbSuite extends TestSuites {
 
   implicit val scheduler = Scheduler.trampoline() // IndexedDB doesn't like access from multiple event loop tasks !
-  def recreateDB(name: String) = RecreateDb(name, db => db.createObjectStore(name, lit("autoIncrement" -> true)))
+  def recreateDB(name: String) = new RecreateDb(name, db => db.createObjectStore(name, lit("autoIncrement" -> true))) with Profiling
 
   val generalUseCases = TestSuite {
 
@@ -31,6 +30,7 @@ object IndexedDbSuite extends TestSuites {
           assert(values(1)("y") == 1)
           db.count(dbName).asFuture.map { count =>
             assert(count.get == 0)
+            db.close()
             count
           }
         case x => Future.failed(new Exception(s"$x unexpected from add-and-getAndDelete-objects"))
@@ -49,6 +49,7 @@ object IndexedDbSuite extends TestSuites {
           assert(keys == Seq(1,2,3,4))
           db.count(dbName).asFuture.map { count =>
             assert(count.get == 4)
+            db.close()
             count
           }
         case x => Future.failed(new Exception(s"$x unexpected from count-records"))
@@ -64,6 +65,7 @@ object IndexedDbSuite extends TestSuites {
       }.asFuture.flatMap {
         case Some(count) =>
           assert(count == 0)
+          db.close()
           Future.successful(count)
         case x => Future.failed(new Exception(s"$x unexpected from clear-store"))
       }
@@ -78,6 +80,7 @@ object IndexedDbSuite extends TestSuites {
       }.asFuture.flatMap {
         case Some(value) =>
           assert(obj == value)
+          db.close()
           Future.successful(value)
         case x => Future.failed(new Exception(s"$x unexpected from add-and-get-object"))
       }
@@ -92,6 +95,7 @@ object IndexedDbSuite extends TestSuites {
       }.asFuture.flatMap {
         case Some(value) =>
           assert(str == value.toString)
+          db.close()
           Future.successful(value)
         case x => Future.failed(new Exception(s"$x unexpected from add-and-get"))
       }
@@ -106,6 +110,7 @@ object IndexedDbSuite extends TestSuites {
       }.asFuture.flatMap {
         case Some(values) =>
           assert(values == (0 until 10).map(_.toString).toSeq)
+          db.close()
           Future.successful(values)
         case x => Future.failed(new Exception(s"$x unexpected from add-and-get-multiple"))
       }
@@ -121,6 +126,7 @@ object IndexedDbSuite extends TestSuites {
         case Some((lastKey, lastValue)) =>
           assert(lastValue.toString == 9.toString)
           assert(lastKey == 10)
+          db.close()
           Future.successful(lastValue)
         case x => Future.failed(new Exception(s"$x unexpected from get-last"))
       }
@@ -140,6 +146,7 @@ object IndexedDbSuite extends TestSuites {
         case Some((lastKey, lastValue)) =>
           assert(lastValue.toString == 8.toString)
           assert(lastKey == 9)
+          db.close()
           Future.successful(lastValue)
         case x => Future.failed(new Exception(s"$x unexpected from get-last"))
       }
@@ -150,7 +157,7 @@ object IndexedDbSuite extends TestSuites {
       val db = IndexedDb(recreateDB(dbName))
       db.getLast[Int, String](dbName).map[Nothing] { res =>
         throw new IllegalStateException("There is supposed to be no record in get-last-on-empty-store")
-      }.asFuture
+      }.doOnComplete(db.close()).asFuture
     }
   }
 

@@ -6,7 +6,7 @@ import utest.framework.{Result, Test, TestSuite}
 import utest.util.Tree
 
 import scala.scalajs.concurrent.JSExecutionContext
-import scala.util.{Success, Failure}
+import scala.util.{Failure, Success}
 
 abstract class TestSuites extends TestSuite {
 
@@ -36,6 +36,8 @@ abstract class TestSuites extends TestSuite {
           println(ex)
           System.exit(0)
         case Success(results) =>
+          println("\n---- Total Stats ----")
+          Profiler.printout()
           print(IndexedDbSuite.generalUseCases, results)
           dom.window.setTimeout(() => System.exit(0), 50)
       }
