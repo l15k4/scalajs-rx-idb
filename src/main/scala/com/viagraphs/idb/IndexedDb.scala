@@ -3,12 +3,15 @@ package com.viagraphs.idb
 import monifu.concurrent.Scheduler
 import monifu.reactive.Observable
 import monifu.reactive.channels.{AsyncChannel, PublishChannel, ReplayChannel}
-import org.scalajs.dom.{ErrorEvent, Event, IDBCursorWithValue, IDBDatabase, IDBObjectStore, IDBOpenDBRequest, IDBVersionChangeEvent, console, window}
+import monifu.reactive.subjects.AsyncSubject
+import org.scalajs.dom._
 import upickle.Aliases.{R, RW, W}
 import upickle._
 
 import scala.collection.mutable.ListBuffer
+import scala.concurrent.{Future, Promise}
 import scala.scalajs.js
+import scala.util.{Failure, Success}
 import scala.util.control.NonFatal
 
 /**
@@ -30,7 +33,17 @@ import scala.util.control.NonFatal
 class IndexedDb private(val underlying: Observable[IDBDatabase], s: Scheduler) {
   implicit val scheduler = s
 
-  def name: Observable[String] = {
+  def getStore(name: String, txMode: TxAccessMode): Observable[IDBObjectStore] = {
+    underlying.map { db =>
+      try {
+        db.transaction(name, txMode.value).objectStore(name)
+      } catch {
+        case NonFatal(ex) => throw new Exception(s"Unable to get store $name", ex)
+      }
+    }
+  }
+
+  def getName: Observable[String] = {
     underlying.map { db =>
       try {
         db.name
@@ -50,16 +63,6 @@ class IndexedDb private(val underlying: Observable[IDBDatabase], s: Scheduler) {
     }
   }
 
-  def getStore(name: String, txMode: TxAccessMode): Observable[IDBObjectStore] = {
-    underlying.map { db =>
-      try {
-        db.transaction(name, txMode.value).objectStore(name)
-      } catch {
-        case NonFatal(ex) => throw new Exception(s"Unable to get store $name", ex)
-      }
-    }
-  }
-
   def storeNames: Observable[List[String]] = {
     underlying.map { db =>
       val names = db.objectStoreNames
@@ -72,7 +75,7 @@ class IndexedDb private(val underlying: Observable[IDBDatabase], s: Scheduler) {
   }
 
   def count(storeName: String): Observable[Int] = {
-    getStore(storeName, ReadWrite).flatMap { store =>
+    getStore(storeName, ReadOnly).flatMap { store =>
       val ch = AsyncChannel[Int]()
       val req = store.count()
       val tx = req.transaction
@@ -210,25 +213,25 @@ class IndexedDb private(val underlying: Observable[IDBDatabase], s: Scheduler) {
 
   def getAndDeleteLast[K : R : ValidKey, V : R](storeName: String): Observable[(K,V)] = {
     getStore(storeName, ReadWrite).flatMap { store =>
-      val ch = AsyncChannel[(K,V)]()
+      val lastSubject = AsyncSubject[(K,V)]()
       val req = store.openCursor(null, "prev")
       val tx = store.transaction
       tx.oncomplete = (e: Event) => {
-        ch.pushComplete()
+        lastSubject.onComplete()
       }
       tx.onerror = (e: Event) => {
-        ch.pushError(new Exception(s"Database.getAndDeleteLast($storeName) failed " + tx.error.name))
+        lastSubject.onError(new Exception(s"Database.getAndDeleteLast($storeName) failed " + tx.error.name))
       }
       req.onsuccess = (e: Event) => {
         e.target.asInstanceOf[IDBOpenDBRequest].result match {
           case cursor: IDBCursorWithValue =>
-            ch.pushNext((readJs[K](json.readJs(cursor.key)), readJs[V](json.readJs(cursor.value))))
+            lastSubject.onNext((readJs[K](json.readJs(cursor.key)), readJs[V](json.readJs(cursor.value))))
             cursor.delete()
           case cursor =>
-            ch.pushComplete()
+            lastSubject.onComplete()
         }
       }
-      ch
+      lastSubject
     }
   }
 
@@ -279,6 +282,9 @@ object ValidKey {
 }
 
 object IndexedDb {
+
+  val WebkitGetDatabaseNames = "webkitGetDatabaseNames"
+
   import scala.collection.immutable.TreeMap
   implicit def TreeMapW[K : W : Ordering, V : W]: W[TreeMap[K, V]] =  W[TreeMap[K, V]](
     x => Js.Arr(x.toSeq.map(writeJs[(K, V)]):_*)
@@ -290,9 +296,43 @@ object IndexedDb {
     }
   )
 
-  def apply(mode: IdbInitMode)(implicit s: Scheduler): IndexedDb = {
-    val channel = AsyncChannel[Event]()
-    val dbObservable = channel.map { event =>
+  def getDatabaseNames(implicit s: Scheduler): Future[DOMStringList] = {
+    val req = window.indexedDB.asInstanceOf[js.Dynamic].applyDynamic(WebkitGetDatabaseNames)().asInstanceOf[IDBRequest]
+    val promise = Promise[DOMStringList]()
+    req.onsuccess = (e: Event) => {
+      promise.success(e.target.asInstanceOf[IDBRequest].result.asInstanceOf[DOMStringList])
+    }
+    req.onerror = (e: ErrorEvent) => {
+      promise.failure(new Exception(s"Unable to get db names because of " + req.error.name))
+    }
+    promise.future
+  }
+
+  def deleteIfPresent(dbName: String)(implicit s: Scheduler): Future[Boolean] = {
+    getDatabaseNames.flatMap { databaseNames =>
+      println("going to delete")
+      val promise = Promise[Boolean]()
+      if (databaseNames.contains(dbName)) {
+        val delReq = window.indexedDB.deleteDatabase(dbName)
+        delReq.onsuccess = (e: Event) => {
+          println("deleted present")
+          promise.success(true)
+        }
+        delReq.onerror = (e: Event) => {
+          promise.failure(new Exception(s"Unable to delete db $dbName because of " + delReq.error.name))
+        }
+      } else {
+        println("not present")
+        promise.success(false)
+      }
+      promise.future
+    } 
+  }
+
+  def apply(mode: IdbInitMode): IndexedDb = {
+    implicit val scheduler = Scheduler.trampoline() // AsyncScheduler wouldn't scale here
+    val dbSubject = AsyncSubject[Event]()
+    val dbObservable = dbSubject.map { event =>
       event.target.asInstanceOf[IDBOpenDBRequest].result.asInstanceOf[IDBDatabase]
     }.replay()
     dbObservable.connect()
@@ -304,8 +344,8 @@ object IndexedDb {
         }
       }
       req.onsuccess = (e: Event) => {
-        channel.pushNext(e)
-        channel.pushComplete()
+        dbSubject.onNext(e)
+        dbSubject.onComplete()
       }
       req.onerror = (e: ErrorEvent) => {
         console.info("Trying open DB but error " + req.error.name)
@@ -317,28 +357,26 @@ object IndexedDb {
 
     val factory = window.indexedDB
     mode match {
-      case NewDb(name, defineObjectStores) =>
-        registerOpenCallbacks(factory.open(name), Some(defineObjectStores))
-      case UpgradeDb(name, version, defineObjectStores) =>
-        registerOpenCallbacks(factory.open(name, version), Some(defineObjectStores))
-      case OpenDb(name) =>
-        registerOpenCallbacks(factory.open(name), None)
-      case RecreateDb(name, defineObjectStores) =>
-        val delReq = factory.deleteDatabase(name)
-        delReq.onsuccess = (e: Event) => {
-          registerOpenCallbacks(factory.open(name), Some(defineObjectStores))
-        }
-        delReq.onerror = (e: Event) => {
-          console.info("Trying delete DB but error " + delReq.error.name)
+      case NewDb(dbName, defineObjectStores) =>
+        registerOpenCallbacks(factory.open(dbName), Some(defineObjectStores))
+      case UpgradeDb(dbName, version, defineObjectStores) =>
+        registerOpenCallbacks(factory.open(dbName, version), Some(defineObjectStores))
+      case OpenDb(dbName) =>
+        registerOpenCallbacks(factory.open(dbName), None)
+      case RecreateDb(dbName, defineObjectStores) =>
+        deleteIfPresent(dbName).onComplete {
+          case Success(deleted) =>
+            registerOpenCallbacks(factory.open(dbName), Some(defineObjectStores))
+          case Failure(ex) =>
+            scheduler.reportFailure(ex)
         }
     }
 
     mode match {
       case m: Profiling =>
-        new IndexedDb(dbObservable, s) with Profiler
+        new IndexedDb(dbObservable, scheduler) with Profiler
       case _ =>
-        new IndexedDb(dbObservable, s)
-
+        new IndexedDb(dbObservable, scheduler)
     }
 
   }

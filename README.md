@@ -4,19 +4,23 @@ scalajs-rx-idb
 Indexed Database reactive (Rx) wrapper written in [scala.js](1) using [monifu](2), [uPickle](3) and [uTest](4).
 
 Primarily it is trying to be :
+
 type safe 
 ---------
 * thanks to [uPickle](3) and its Reader/Writer type classes user just declares input/return types and uPickle does the rest. It even allows you to deserialize objects in a type safe manner without knowing what type of object you're gonna get from database (See uPickle's tagged values in sealed hierarchies)
 * a key validation type class doesn't let you store keys of unsupported types
 
-user friendly 
+user friendly because
 -------------
-* because there is too much mutability and confusion regarding request result value, versioning, transactions and error handling in IndexedDb API
+* there is too much mutability and confusion regarding request result value, versioning, transactions and error handling in IndexedDb API
+* no living soul wants to spend 3 hours trying to reliably check whether a database exists
+* it should prevent lock starvation that I spent literally days to put up with already
 * Rx based API has a clean contract by definition
 
-handling asynchrony and resilience the Rx way 
--------------------------------------------------
-* because IndexedDb API imho leads to inevitable callback hell and I couldn't really say when it crashes and why.
+handling asynchrony and resilience the Rx way because 
+---------------------------------
+* IndexedDb API imho leads to inevitable callback hell and I couldn't really say when it crashes and why.
+* it makes it easier to implement new features like profiling  
 
 In other words, working with IndexedDb directly is not that easy as one might expect.
 

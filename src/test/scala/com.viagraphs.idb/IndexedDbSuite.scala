@@ -2,19 +2,53 @@ package com.viagraphs.idb
 
 import monifu.concurrent.Scheduler
 import monifu.reactive.Observable
+import org.scalajs.dom
+import org.scalajs.dom.{ErrorEvent, Event, IDBVersionChangeEvent}
 import utest._
 
 import scala.concurrent.Future
 import scala.scalajs.js.Dynamic.{literal => lit}
+import scala.util.Success
 
 case class AnInstance(a: String, b: Int, c: Map[Int,String])
 
 object IndexedDbSuite extends TestSuites {
 
-  implicit val scheduler = Scheduler.trampoline() // IndexedDB doesn't like access from multiple event loop tasks !
+  implicit val scheduler = Scheduler.trampoline()
+
   def recreateDB(name: String) = new RecreateDb(name, db => db.createObjectStore(name, lit("autoIncrement" -> true))) with Profiling
 
   val generalUseCases = TestSuite {
+
+    "get-db-names"-{
+      IndexedDb(recreateDB("get-db-names")).underlying.asFuture.flatMap { db =>
+        IndexedDb.getDatabaseNames.map { names =>
+          assert(names.contains("get-db-names"))
+          (0 until names.length).foldLeft(List[String]()) { case (acc, i) => names(i) :: acc}
+        }
+      }
+    }
+
+    "delete-db-if-present"-{
+      val dbName = "delete-db-if-present"
+      IndexedDb(recreateDB(dbName)).underlying.asFuture.flatMap {
+        case Some(_) =>
+          println("having db")
+          IndexedDb.deleteIfPresent(dbName).flatMap { deleted =>
+            println("deleted")
+            assert(deleted)
+            IndexedDb.getDatabaseNames.map { names =>
+              println("having names")
+              val deleted = !names.contains(dbName)
+              assert(deleted)
+              deleted
+            }
+          }
+        case None =>
+          Future.failed(new Exception("deleteIfPresent should certainly return something!"))
+      }
+
+    }
 
     "add-and-getAndDelete-objects"- {
       val dbName = "add-and-getAndDelete-objects"
