@@ -11,7 +11,7 @@ case class Entry(methodName: String, executionTime: Double)
 case class EntrySum(invocationCount: Int, executionTime: Double)
 
 trait Profiler extends IndexedDb {
-
+  implicit val scheduler = IndexedDb.scheduler
   val stats = ListBuffer[Entry]()
   
   private def now = new js.Date().getTime()
@@ -21,23 +21,24 @@ trait Profiler extends IndexedDb {
     Profiler.totalStats += entry
   }
 
-  abstract override def close(): Unit = {
+  abstract override def close(): Observable[String] = {
     val start = now
-    super.close()
+    val obs = super.close()
     log("close", start)
     Profiler.printout(stats)
+    obs
   }
 
-  abstract override def getStore(name: String, txMode: TxAccessMode): Observable[IDBObjectStore] = {
+  abstract override def openStoreTx(name: String, txMode: TxAccessMode): Observable[StoreTx] = {
     val start = now
-    super.getStore(name, txMode).doOnComplete {
+    super.openStoreTx(name, txMode).doOnComplete {
       log("getStore", start)
     }
   }
 
-  abstract override def storeNames: Observable[List[String]] = {
+  abstract override def getStoreNames: Observable[List[String]] = {
     val start = now
-    super.storeNames.doOnComplete {
+    super.getStoreNames.doOnComplete {
       log("storeNames", start)
     }
   }
@@ -49,7 +50,7 @@ trait Profiler extends IndexedDb {
     }
   }
 
-  abstract override def clear(storeName: String): Observable[Unit] = {
+  abstract override def clear(storeName: String): Observable[Nothing] = {
     val start = now
     super.clear(storeName).doOnComplete {
       log("clear", start)
@@ -77,7 +78,7 @@ trait Profiler extends IndexedDb {
     }
   }
 
-  abstract override def delete[K : W : ValidKey](storeName: String, keys: K*): Observable[Unit] = {
+  abstract override def delete[K : W : ValidKey](storeName: String, keys: K*): Observable[Nothing] = {
     val start = now
     super.delete[K](storeName, keys:_*).doOnComplete {
       log("delete", start)

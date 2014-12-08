@@ -5,6 +5,11 @@ sealed trait TxAccessMode {
   def value: String
 }
 
+/**
+ * If multiple "readwrite" transactions are attempting to access the same object store (i.e. if they have overlapping scope),
+ * the transaction that was created first must be the transaction which gets access to the object store first.
+ * Due to the requirements in the previous paragraph, this also means that it is the only transaction which has access to the object store until the transaction is finished.
+ */
 object ReadWrite extends TxAccessMode {
   val value = "readwrite" /*(IDBTransaction.READ_WRITE : UndefOr[String]).getOrElse("readwrite")*/
 }

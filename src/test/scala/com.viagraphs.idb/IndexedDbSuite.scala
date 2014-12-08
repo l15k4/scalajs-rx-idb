@@ -2,21 +2,18 @@ package com.viagraphs.idb
 
 import monifu.concurrent.Scheduler
 import monifu.reactive.Observable
-import org.scalajs.dom
-import org.scalajs.dom.{ErrorEvent, Event, IDBVersionChangeEvent}
 import utest._
 
 import scala.concurrent.Future
 import scala.scalajs.js.Dynamic.{literal => lit}
-import scala.util.Success
 
 case class AnInstance(a: String, b: Int, c: Map[Int,String])
 
 object IndexedDbSuite extends TestSuites {
 
-  implicit val scheduler = Scheduler.trampoline()
+  implicit val scheduler = Scheduler()
 
-  def recreateDB(name: String) = new RecreateDb(name, db => db.createObjectStore(name, lit("autoIncrement" -> true))) with Profiling
+  def recreateDB(name: String) = new RecreateDb(name, db => db.createObjectStore(name, lit("autoIncrement" -> true))) with Logging
 
   val generalUseCases = TestSuite {
 
@@ -31,20 +28,17 @@ object IndexedDbSuite extends TestSuites {
 
     "delete-db-if-present"-{
       val dbName = "delete-db-if-present"
-      IndexedDb(recreateDB(dbName)).underlying.asFuture.flatMap {
-        case Some(_) =>
-          println("having db")
+      IndexedDb(recreateDB(dbName)).close().asFuture.flatMap {
+        case None =>
           IndexedDb.deleteIfPresent(dbName).flatMap { deleted =>
-            println("deleted")
             assert(deleted)
             IndexedDb.getDatabaseNames.map { names =>
-              println("having names")
               val deleted = !names.contains(dbName)
               assert(deleted)
               deleted
             }
           }
-        case None =>
+        case _ =>
           Future.failed(new Exception("deleteIfPresent should certainly return something!"))
       }
 
@@ -169,16 +163,17 @@ object IndexedDbSuite extends TestSuites {
     "get-and-delete-last" - {
       val dbName = "get-and-delete-last"
       val db = IndexedDb(recreateDB(dbName))
-      db.add[Int, String](dbName, None, (0 until 10).map(_.toString):_*).buffer(10).flatMap { keys =>
+      db.add[Int, String](dbName, None, (1 to 10).map(_.toString):_*).buffer(10).flatMap { keys =>
         assert(keys == (1 to 10).toSeq)
-        db.getAndDeleteLast[Int, String](dbName).mergeMap { case (lastKey, lastValue) =>
-          assert(lastValue.toString == 9.toString)
-          assert(lastKey == 10)
-          db.getLast[Int, String](dbName)
+        db.getAndDeleteLast[Int, String](dbName).flatMap {
+          case (deletedKey, deletedValue) =>
+            assert(deletedKey == 10)
+            assert(deletedValue.toString == 10.toString)
+            db.getLast[Int, String](dbName)
         }
       }.asFuture.flatMap {
         case Some((lastKey, lastValue)) =>
-          assert(lastValue.toString == 8.toString)
+          assert(lastValue.toString == 9.toString)
           assert(lastKey == 9)
           db.close()
           Future.successful(lastValue)
@@ -194,5 +189,4 @@ object IndexedDbSuite extends TestSuites {
       }.doOnComplete(db.close()).asFuture
     }
   }
-
 }
