@@ -1,7 +1,7 @@
 package com.viagraphs.idb
 
-import monifu.concurrent.{UncaughtExceptionReporter, Scheduler}
-import monifu.reactive.Ack.Continue
+import monifu.concurrent.{Scheduler, UncaughtExceptionReporter}
+import monifu.reactive.Ack.{Cancel, Continue}
 import monifu.reactive.Observable
 import monifu.reactive.internals.FutureAckExtensions
 import org.scalajs.dom._
@@ -53,36 +53,27 @@ import scala.util.{Failure, Success}
 
 class IndexedDb private(val underlying: Observable[IDBDatabase]) {
   implicit val exceptionReporter = UncaughtExceptionReporter.LogExceptionsToStandardErr
+  import com.viagraphs.idb.IndexedDb.ObservablePimp
 
-  def openStoreTx(name: String, txMode: TxAccessMode): Observable[StoreTx] = {
+  def openStoreTx(name: String, txMode: TxAccessMode): Observable[StoreTx] =
     Observable.create { observer =>
-      underlying.foreach { db =>
-        try {
-          val tx = db.transaction(name, txMode.value)
-          val store = tx.objectStore(name)
-          observer.onNext(StoreTx(store, tx))
-          observer.onComplete()
-        } catch {
-          case NonFatal(ex) =>
-            observer.onError(new IDbException(s"Unable to get store $name", ex))
-        }
-      }
+      underlying.foreachWith(observer) { db =>
+        val tx = db.transaction(name, txMode.value)
+        val store = tx.objectStore(name)
+        observer.onNext(StoreTx(store, tx))
+        observer.onComplete()
+      }(db => s"Unable to openStoreTx $name in db ${db.name}")
     }
-  }
+  
 
-  def getName: Observable[String] = {
+  def getName: Observable[String] =
     Observable.create { observer =>
-      underlying.foreach { db =>
-        try {
-          observer.onNext(db.name)
-          observer.onComplete()
-        } catch {
-          case NonFatal(ex) =>
-            observer.onError(new IDbException(s"Unable to get database name", ex))
-        }
-      }
+      underlying.foreachWith(observer) { db =>
+        observer.onNext(db.name)
+        observer.onComplete()
+      }(db => s"Unable to get database name")
     }
-  }
+  
 
   /**
    * Set the internal closePending flag of connection to true.
@@ -90,16 +81,12 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
    */
   def close(): Observable[String] = {
     Observable.create { observer =>
-      underlying.foreach { db =>
-        try {
-          observer.onNext(db.name)
-          db.close()
-          observer.onComplete()
-        } catch {
-          case NonFatal(ex) =>
-            observer.onError(new IDbException(s"Unable to close database ${db.name}", ex))
-        }
-      }
+      underlying.foreachWith(observer) { db =>
+        val dbName = db.name
+        db.close()
+        observer.onNext(dbName)
+        observer.onComplete()
+      }(db => s"Unable to close database ${db.name}")
     }
   }
 
@@ -108,23 +95,25 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
    *       When a database is requested to be deleted the flag is set to true and all attempts at opening the database are stalled until the database can be deleted.
    */
   def delete(): Observable[String] = {
+    def errorMsg(arg: String) = s"Deleting database $arg failed"
     Observable.create { observer =>
-      close().foreach { dbName =>
+      close().foreachWith(observer) { dbName =>
         val delReq = window.indexedDB.deleteDatabase(dbName)
         delReq.onsuccess = (e: Event) => {
           observer.onNext(dbName)
           observer.onComplete()
         }
         delReq.onerror = (e: Event) => {
-          observer.onError(new IDbRequestException(s"Deleting database $dbName failed ", delReq.error))
+          observer.onError(new IDbRequestException(errorMsg(dbName), delReq.error))
         }
-      }
+      }(dbName => errorMsg(dbName))
     }
   }
 
   def getStoreNames: Observable[List[String]] = {
+    def errorMsg(arg: String) = s"Unable to get storeNames of $arg"
     Observable.create { observer =>
-      underlying.foreach { db =>
+      underlying.foreachWith(observer) { db =>
         try {
           val names = db.objectStoreNames
           val result = ListBuffer[String]()
@@ -134,62 +123,66 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
           result.toList
         } catch {
           case NonFatal(ex) =>
-            observer.onError(new IDbException(s"Unable to get storeNames of ${db.name}", ex))
+            observer.onError(new IDbException(errorMsg(db.name), ex))
         }
-      }
+      }(db => errorMsg(db.name))
     }
   }
 
   def count(storeName: String): Observable[Int] = {
+    def errorMsg = s"Database.count($storeName) failed"
     Observable.create { observer =>
-      openStoreTx(storeName, ReadOnly).foreach { case StoreTx(store, tx) =>
+      openStoreTx(storeName, ReadOnly).foreachWith(observer) { case StoreTx(store, tx) =>
         val req = store.count()
         req.onsuccess = (e: Event) => {
           observer.onNext(e.target.asInstanceOf[IDBOpenDBRequest].result.asInstanceOf[Int])
           observer.onComplete()
         }
         req.onerror = (e: ErrorEvent) => {
-          observer.onError(new IDbRequestException(s"Database.count($storeName) failed", req.error))
+          observer.onError(new IDbRequestException(errorMsg, req.error))
         }
-      }
+      }(storeTx => errorMsg)
     }
   }
 
-  def clear(storeName: String): Observable[Nothing] = {  //TODO should be Nothing
+  //TODO should be transaction oriented ?
+  def clear(storeName: String): Observable[Nothing] = {
+    def errorMsg = s"Database.clear($storeName) failed"
     Observable.create { observer =>
-      openStoreTx(storeName, ReadWrite).foreach { case StoreTx(store, tx) =>
-        val req = store.clear()
-        req.onsuccess = (e: Event) => {
+      openStoreTx(storeName, ReadWrite).foreachWith(observer) { case StoreTx(store, tx) =>
+        store.clear()
+        tx.oncomplete = (e: Event) => {
           observer.onComplete()
         }
-        req.onerror = (e: ErrorEvent) => {
-          observer.onError(new IDbRequestException(s"Database.clear($storeName) failed", tx.error))
+        tx.onerror = (e: ErrorEvent) => {
+          observer.onError(new IDbRequestException(errorMsg, tx.error))
         }
-      }
+      }(storeTx => errorMsg)
     }
   }
 
   def getLast[K : R : ValidKey, V : R](storeName: String): Observable[(K,V)] = {
+    def errorMsg = s"Database.getLast($storeName) failed"
     Observable.create { observer =>
-      openStoreTx(storeName, ReadOnly).foreach { case StoreTx(store, tx) =>
+      openStoreTx(storeName, ReadOnly).foreachWith(observer) { case StoreTx(store, tx) =>
         val req = store.openCursor(null, "prev")
         req.onsuccess = (e: Event) => {
           e.target.asInstanceOf[IDBOpenDBRequest].result match {
             case cursor: IDBCursorWithValue =>
               try observer.onNext((readJs[K](json.readJs(cursor.key)), readJs[V](json.readJs(cursor.value)))) catch {
                 case NonFatal(ex) =>
-                  observer.onError(new IDbException(s"Unable to getLast($storeName)", ex))
+                  observer.onError(new IDbException(errorMsg, ex))
               }
             case cursor =>
           }
         }
         req.onerror = (e: ErrorEvent) => {
-          observer.onError(new IDbRequestException(s"Database.getLast($storeName) failed", req.error))
+          observer.onError(new IDbRequestException(errorMsg, req.error))
         }
         tx.oncomplete = (e: Event) => {
           observer.onComplete()
         }
-      }
+      }(storeTx => errorMsg)
     }
   }
 
@@ -197,8 +190,10 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
    * @return observable of values that might be undefined if a key doesn't exist
    */
   def get[K : W : ValidKey, V : R](storeName: String, keys: K*): Observable[V] = {
-    Observable.create { observer =>
-      openStoreTx(storeName, ReadOnly).foreach { case StoreTx(store, tx) =>
+    def errorKey(key: js.Any) = s"get $key from $storeName failed"
+    def errorKeys = s"Unexpected error during get($storeName,$keys)"
+      Observable.create { observer =>
+      openStoreTx(storeName, ReadOnly).foreachWith(observer) { case StoreTx(store, tx) =>
         def >>(it: Iterator[K]): Unit = {
           if (it.hasNext) {
             try {
@@ -212,11 +207,11 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
                 }(IndexedDb.scheduler)
               }
               req.onerror = (e: ErrorEvent) => {
-                observer.onError(new IDbRequestException(s"Database.get($storeName, $key) failed", req.error))
+                observer.onError(new IDbRequestException(errorKey(key), req.error))
               }
             } catch {
               case NonFatal(ex) =>
-                observer.onError(new IDbException(s"Unexpected error during get($storeName,$keys)", ex))
+                observer.onError(new IDbException(errorKeys, ex))
             }
           }
         }
@@ -226,13 +221,13 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
             observer.onComplete()
           }
           tx.onerror = (e: ErrorEvent) => {
-            observer.onError(new IDbTxException(s"Database.get($storeName, $keys) failed", tx.error))
+            observer.onError(new IDbTxException(errorKeys, tx.error))
           }
           >>(it)
         } else {
           observer.onComplete()
         }
-      }
+      }(storeTx => errorKeys)
     }
   }
 
@@ -241,8 +236,10 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
    * @param values  Structured clones of values is created, beware that structure clone algorithm may fail
    */
   def add[K : RW : ValidKey, V : W](storeName: String, optKey: Option[K], values: V*): Observable[K] = {
+    def errorValue(value: js.Any) =s"add $value to $storeName failed"
+    def errorValues = s"Unexpected error during add($storeName,$optKey,$values)"
     Observable.create { observer =>
-      openStoreTx(storeName, ReadWrite).foreach { case StoreTx(store, tx) =>
+      openStoreTx(storeName, ReadWrite).foreachWith(observer) { case StoreTx(store, tx) =>
         def >>(it: Iterator[V]): Unit = {
           if (it.hasNext) {
             try {
@@ -256,11 +253,11 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
                 }(IndexedDb.scheduler)
               }
               req.onerror = (e: Event) => {
-                observer.onError(new IDbRequestException(s"Database.add($storeName, $value) failed", req.error))
+                observer.onError(new IDbRequestException(errorValue(value), req.error))
               }
             } catch {
               case NonFatal(ex) =>
-                observer.onError(new IDbException(s"Unexpected error during add($storeName,$optKey,$values)", ex))
+                observer.onError(new IDbException(errorValues, ex))
             }
           }
         }
@@ -270,27 +267,28 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
             observer.onComplete()
           }
           tx.onerror = (e: Event) => {
-            observer.onError(new IDbTxException(s"Database.add($storeName, $values) failed", tx.error))
+            observer.onError(new IDbTxException(errorValues, tx.error))
           }
           >>(it)
         } else {
           observer.onComplete()
         }
-      }
+      }(storeTx => errorValues)
     }
   }
 
   //TODO The IDBKeyRange interface defines a key range.
 
   def getAndDeleteLast[K : R : ValidKey, V : R](storeName: String): Observable[(K,V)] = {
+    def errorMsg = s"Database.getAndDeleteLast($storeName) failed"
     Observable.create { observer =>
-      openStoreTx(storeName, ReadWrite).foreach { case StoreTx(store, tx) =>
+      openStoreTx(storeName, ReadWrite).foreachWith(observer) { case StoreTx(store, tx) =>
         val req = store.openCursor(null, "prev")
         tx.oncomplete = (e: Event) => {
           observer.onComplete()
         }
         tx.onerror = (e: Event) => {
-          observer.onError(new IDbTxException(s"Database.getAndDeleteLast($storeName) failed", tx.error))
+          observer.onError(new IDbTxException(errorMsg, tx.error))
         }
         req.onsuccess = (e: Event) => {
           e.target.asInstanceOf[IDBOpenDBRequest].result match {
@@ -300,29 +298,27 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
                 cursor.delete()
               } catch {
                 case NonFatal(ex) =>
-                  observer.onError(new IDbException(s"Unable to getAndDeleteLast($storeName)", ex))
+                  observer.onError(new IDbException(errorMsg, ex))
               }
             case cursor =>
           }
         }
-      }
+      }(storeTx => errorMsg)
     }
-  }
-
-  def delete[K : W : ValidKey](storeName: String, keys: K*): Observable[Nothing] = {
-    deleteInternally[K](storeName, keys:_*)
   }
 
   def getAndDelete[K : W : ValidKey, V : R](storeName: String, keys: K*): Observable[V] = {
     implicit val s = IndexedDb.scheduler
-    get[K,V](storeName, keys:_*).buffer(keys.length).flatMap { values =>
-      deleteInternally[K](storeName, keys:_*).ambWith(Observable.from(values))
+    get[K,V](storeName, keys:_*).flatMapOnComplete { values =>
+      delete[K](storeName, keys:_*).endWith(values:_*)
     }
   }
 
-  private def deleteInternally[K: W : ValidKey](storeName: String, keys: K*): Observable[Nothing] = {
+  def delete[K: W : ValidKey](storeName: String, keys: K*): Observable[Nothing] = {
+    def errorKey(key: js.Any) = s"delete $key in $storeName failed"
+    def errorKeys = s"Unable to delete($storeName, $keys)"
     Observable.create[Nothing] { observer =>
-      openStoreTx(storeName, ReadWrite).foreach { case StoreTx(store, tx) =>
+      openStoreTx(storeName, ReadWrite).foreachWith(observer) { case StoreTx(store, tx) =>
         def >>(it: Iterator[K]): Unit = {
           if (it.hasNext) {
             try {
@@ -332,11 +328,11 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
                 >>(it)
               }
               req.onerror = (e: Event) => {
-                observer.onError(new IDbRequestException(s"Database.delete($storeName, $key) failed", req.error))
+                observer.onError(new IDbRequestException(errorKey(key), req.error))
               }
             } catch {
               case NonFatal(ex) =>
-                observer.onError(new IDbException(s"Unable to deleteInternally($storeName, $keys)", ex))
+                observer.onError(new IDbException(errorKeys, ex))
             }
           }
         }
@@ -346,13 +342,14 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
             observer.onComplete()
           }
           tx.onerror = (e: Event) => {
-            observer.onError(new IDbTxException(s"Database.delete($storeName, $keys) failed", tx.error))
+            observer.onError(new IDbTxException(errorKeys, tx.error))
           }
           >>(it)
         }
-      }
+      }(storeTx => errorKeys)
     }
   }
+
 }
 
 /**
@@ -482,4 +479,62 @@ object IndexedDb {
 
   }
 
+  implicit class ObservablePimp[E](observable: Observable[E]) {
+    import monifu.reactive.Ack.Continue
+    import monifu.reactive.{Observable, Observer}
+
+    def foreachWith(delegate: Observer[_])(cb: E => Unit)(msg: E => String)(implicit r: UncaughtExceptionReporter): Unit =
+      observable.unsafeSubscribe(
+        new Observer[E] {
+          def onNext(elem: E) =
+            try { cb(elem); Continue } catch {
+              case NonFatal(ex) =>
+                onError(ex, elem)
+                Cancel
+            }
+
+          def onComplete() = ()
+          def onError(ex: Throwable) = ???
+          def onError(ex: Throwable, elem: E) = {
+            delegate.onError(new IDbException(msg(elem), ex))
+          }
+        }
+      )
+
+    def flatMapOnComplete[U](f: Seq[E] => Observable[U]): Observable[U] =
+      flatMapOnComplete(observable.buffer(Integer.MAX_VALUE)(IndexedDb.scheduler).map(f))
+
+    private def flatMapOnComplete[U,T](source: Observable[T])(implicit ev: T <:< Observable[U]): Observable[U] =
+      Observable.create[U] { observerU =>
+        source.unsafeSubscribe(new Observer[T] {
+          private[this] var childObservable: T = _
+
+          def onNext(elem: T) = {
+            childObservable  = elem
+            Continue
+          }
+
+          def onError(ex: Throwable) = {
+            observerU.onError(ex)
+          }
+
+          def onComplete() = {
+            Option(childObservable).fold(observerU.onComplete()) { obs =>
+              obs.unsafeSubscribe(new Observer[U] {
+                def onNext(elem: U) = {
+                  observerU.onNext(elem)
+                }
+                def onError(ex: Throwable): Unit = {
+                  observerU.onError(ex)
+                }
+
+                def onComplete(): Unit = {
+                  observerU.onComplete()
+                }
+              })
+            }
+          }
+        })
+      }
+  }
 }
