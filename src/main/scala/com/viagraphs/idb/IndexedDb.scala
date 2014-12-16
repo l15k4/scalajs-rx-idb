@@ -47,8 +47,18 @@ import scala.util.{Failure, Success}
  */
 class IndexedDb private(val underlying: Observable[IDBDatabase]) {
 
+  /**
+   *
+   * @param name object store name
+   * @tparam K type of store keys, it must have uPickle's Reader and Writer evidence and it must be a ValidKey
+   * @tparam V type of store values, it must have uPickle's Reader and Writer evidence
+   * @return Store that requests are initiated from
+   */
   def openStore[K : W : R : ValidKey, V : W : R](name: String) = new Store[K, V](name, underlying)
 
+  /**
+   * @return observable of name of this database
+   */
   def getName: Observable[String] =
     Observable.create { observer =>
       underlying.foreachWith(observer) { db =>
@@ -58,8 +68,9 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
     }
 
   /**
-   * Set the internal closePending flag of connection to true.
-   * Wait for all transactions created using connection to complete. Once they are complete, connection is closed.
+   * @return Observable of one element - name of this database that was closed
+   * Internally it sets the closePending flag of connection to true.
+   * Waits for all transactions created using connection to complete. Once they are complete, connection is closed.
    */
   def close(): Observable[String] = {
     Observable.create { observer =>
@@ -73,6 +84,7 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
   }
 
   /**
+   * @return Observable of one element - name of this database that was deleted
    * @note IDBDatabase has a delete pending flag which is used during deletion.
    *       When a database is requested to be deleted the flag is set to true and all attempts at opening the database are stalled until the database can be deleted.
    */
@@ -92,6 +104,9 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
     }
   }
 
+  /**
+   * @return observable of names of all stores in this database
+   */
   def getStoreNames: Observable[List[String]] = {
     def errorMsg(arg: String) = s"Unable to get storeNames of $arg"
     Observable.create { observer =>
@@ -115,6 +130,7 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
 object IndexedDb {
   implicit val scheduler = Scheduler.trampoline()
 
+  /* the only way to find out whether a database exists */
   val WebkitGetDatabaseNames = "webkitGetDatabaseNames"
 
   def getDatabaseNames: Future[DOMStringList] = {
@@ -130,7 +146,7 @@ object IndexedDb {
   }
 
   /**
-   * Do not delete database that is currently open, it is your responsibility to close it prior deletion
+   * @note Do not delete database that is currently open, it is your responsibility to close it prior deletion
    */
   def deleteIfPresent(dbName: String): Future[Boolean] = {
     getDatabaseNames.flatMap { databaseNames =>
@@ -160,7 +176,7 @@ object IndexedDb {
       /**
        * IDBFactory.open call doesn't create transaction !
        */
-      def registerOpenCallbacks(req: IDBOpenDBRequest, upgradeOpt: Option[IDBDatabase => IDBObjectStore]): Unit = {
+      def registerOpenCallbacks(req: IDBOpenDBRequest, upgradeOpt: Option[IDBDatabase => Unit]): Unit = {
         upgradeOpt.foreach { upgrade =>
           req.onupgradeneeded = (ve: IDBVersionChangeEvent) => {
             upgrade(ve.target.asInstanceOf[IDBOpenDBRequest].result.asInstanceOf[IDBDatabase])

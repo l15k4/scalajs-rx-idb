@@ -37,6 +37,9 @@ class IDbException(msg: String, cause: Throwable) extends Exception(msg, cause)
 case class IDbRequestException(message: String, error: DOMError) extends IDbException(message, new Exception(error.name))
 case class IDbTxException(message: String, error: DOMError) extends IDbException(message, new Exception(error.name))
 
+/**
+ * KeyRange might be iterated even descendingly (prev)
+ */
 sealed trait Direction {
   def value: String
 }
@@ -50,7 +53,7 @@ object Direction {
 }
 
 /**
- * Type Class that puts a view bound on Key types. Value types are not restricted much so I don't handle that
+ * Type Class that puts a view bound on key types. Value types are not restricted much so I don't handle that
  */
 sealed trait ValidKey[K]
 object ValidKey {
@@ -66,7 +69,7 @@ object ValidKey {
 case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying: Observable[IDBDatabase]) {
   import scala.scalajs.js.JSConverters._
 
-  def openTx(txAccess: TxAccess): Observable[IDBTransaction] =
+  private[this] def openTx(txAccess: TxAccess): Observable[IDBTransaction] =
     Observable.create { observer =>
       underlying.foreachWith(observer) { db =>
         val tx = db.transaction(txAccess.storeNames.toJSArray, txAccess.value)
@@ -75,6 +78,10 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
       }(db => s"Unable to openStoreTx $name in db ${db.name}")
     }
 
+  /**
+   * IDB is requested by providing store keys as scala [[Iterable]] or this [[Key]].
+   * As [[Iterable]] is a type constructor, [[Key]] must have become type constructor too to make abstraction over both
+   */
   sealed trait Key[_] {
     def range: IDBKeyRange
     def direction: Direction
@@ -88,7 +95,11 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
     def range: IDBKeyRange = null
     def direction: Direction = Direction.Next
   }
-  
+
+  /**
+   * Type class representing a transaction strategy over request input that is either [[Iterable]] or [[Key]]
+   * @tparam C either [[Iterable]] or [[Key]] type constructor
+   */
   trait Tx[C[_]] {
     def execute[I, O](request: Request[I, O, C], tx: IDBTransaction, observer: Observer[O]): Unit
   }
@@ -167,6 +178,11 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
     }
   }
 
+  /**
+   * Request is an observable of Output/results
+   * @param input an [[Iterable]] or [[Key]] of keys or values transaction is created over
+   * @param tx transaction strategy for either [[Iterable]] or [[Key]]
+   */
   abstract class Request[I, O, C[_]](val input: C[I], tx: Tx[C]) extends Observable[O] {
     def txAccess: TxAccess
     def execute(store: IDBObjectStore, input: Either[I, Key[I]]): IDBRequest
@@ -181,6 +197,13 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
     }
   }
 
+  /**
+   * Updates store records matching keys with entries
+   * @param keys keys of records to update - either [[Iterable]] or [[Key]]
+   * @param entries map of key-value pairs to update store with
+   * @return observable of the updated key-value pairs (the old values)
+   * @note providing both keys and entries[key,value] is necessary due to IDB's cursor internal workings
+   */
   def update[C[_]](keys: C[K], entries: Map[K,V])(implicit e: Tx[C]): Observable[(K,V)] = new Request[K, (K,V), C](keys, e) {
     def txAccess = ReadWrite(storeName)
 
@@ -200,12 +223,14 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
         case Right(cursor) =>
           val promise = Promise[Ack]()
           val key = readJs[K](json.readJs(cursor.key))
-          val value = entries.getOrElse(key, throw new IllegalArgumentException(s"Key $key is not present in update entries !"))
-          val req = cursor.update(json.writeJs(writeJs[V](value)).asInstanceOf[js.Any])
+          val oldVal = readJs[V](json.readJs(cursor.value))
+          val newVal = entries.getOrElse(key, throw new IllegalArgumentException(s"Key $key is not present in update entries !"))
+          val req = cursor.update(json.writeJs(writeJs[V](newVal)).asInstanceOf[js.Any])
           req.onsuccess = (e: Event) =>
+            observer.onNext((key,oldVal))
             promise.success(Continue)
           req.onerror = (e: ErrorEvent) => {
-            observer.onError(new IDbRequestException(s"Updating cursor '$key' with '$value' failed", req.error))
+            observer.onError(new IDbRequestException(s"Updating cursor '$key' with '$newVal' failed", req.error))
             promise.success(Cancel)
           }
           promise.future
@@ -221,6 +246,9 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
   }
 
   /**
+   * Gets records by keys
+   * @param keys keys of records to get - either [[Iterable]] or [[Key]]
+   * @return observable of key-value pairs
    * @note that values might be undefined if a key doesn't exist !
    */
   def get[C[_]](keys: C[K])(implicit e: Tx[C]): Observable[(K,V)] = new Request[K, (K, V), C](keys, e) {
@@ -251,6 +279,10 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
     def onError(input: Option[K] = None) = s"getting ${input.getOrElse("")} from $storeName failed"
   }
 
+  /**
+   * @param values to append to the object store with autogenerated key
+   * @return observable of appended key-value pairs
+   */
   def append[C[X] <: Iterable[X]](values: C[V])(implicit e: Tx[C]): Observable[(K,V)] = new Request[V, (K, V), C](values, e) {
     val txAccess = ReadWrite(storeName)
 
@@ -274,6 +306,8 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
   }
 
   /**
+   * @param entries key-value pairs to insert to object store
+   * @return An empty observable that just completes or errors out
    * @note that structured clones of values are created, beware that structure clone internal idb algorithm may fail
    */
   def add(entries: Map[K, V])(implicit e: Tx[Iterable]): Observable[Unit] = new Request[(K, V), Unit, Iterable](entries, e) {
@@ -294,6 +328,10 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
     def onError(input: Option[(K, V)] = None) = s"appending ${input.getOrElse("")} to $storeName failed"
   }
 
+  /**
+   * @param keys of records to delete
+   * @return empty observable that either completes or errors out when records are deleted
+   */
   def delete[C[_]](keys: C[K])(implicit e: Tx[C]): Observable[Unit] = new Request[K, Unit, C](keys, e) {
     val txAccess = ReadWrite(storeName)
 
@@ -324,6 +362,9 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
     def onError(input: Option[K] = None) = s"deleting ${input.getOrElse("")} from $storeName failed"
   }
 
+  /**
+   * @return observable of one element - count of records in this store
+   */
   def count: Observable[Int] = {
     def errorMsg = s"Database.count($storeName) failed"
     Observable.create { observer =>
@@ -340,6 +381,9 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
     }
   }
 
+  /**
+   * Deletes all records from this store
+   */
   def clear: Observable[Nothing] = {
     def errorMsg = s"Database.clear($storeName) failed"
     Observable.create { observer =>

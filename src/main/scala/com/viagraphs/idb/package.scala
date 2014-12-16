@@ -4,7 +4,7 @@ import monifu.concurrent.Scheduler
 import monifu.reactive.Ack.{Cancel, Continue}
 import monifu.reactive.internals.FutureAckExtensions
 import monifu.reactive.{Ack, Observable, Observer}
-import org.scalajs.dom.{IDBDatabase, IDBObjectStore}
+import org.scalajs.dom.IDBDatabase
 
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Future
@@ -27,25 +27,38 @@ package object idb {
      * @note If the version of db is higher than version, return a DOMError of type VersionError.
      */
     def version: Int
-    def defineObjectStores: IDBDatabase => IDBObjectStore
+
+    /**
+     * create and define object stores, indices, etc.
+     */
+    def defineObjectStores: IDBDatabase => Unit
   }
 
-  trait Profiling
-  trait Logging
-
-  case class NewDb(name: String, defineObjectStores: IDBDatabase => IDBObjectStore) extends IdbInitMode {
+  /**
+   * Create new database, use defineObjectStores to define object stores
+   */
+  case class NewDb(name: String, defineObjectStores: IDBDatabase => Unit) extends IdbInitMode {
     def version = ???
   }
 
-  case class RecreateDb(name: String, defineObjectStores: IDBDatabase => IDBObjectStore) extends IdbInitMode {
+  /**
+   * Delete an existing database of this name and creates new one by defineObjectStores
+   */
+  case class RecreateDb(name: String, defineObjectStores: IDBDatabase => Unit) extends IdbInitMode {
     def version = ???
   }
 
-  case class UpgradeDb(name: String, version: Int, defineObjectStores: IDBDatabase => IDBObjectStore) extends IdbInitMode
+  /**
+   * Upgrades an existing database to a new version. Use defineObjectStores to alter existing store definitions
+   */
+  case class UpgradeDb(name: String, version: Int, defineObjectStores: IDBDatabase => Unit) extends IdbInitMode
 
+  /**
+   * Just open an existing database
+   */
   case class  OpenDb(name: String) extends IdbInitMode {
     def version: Int = ???
-    def defineObjectStores: (IDBDatabase) => IDBObjectStore = ???
+    def defineObjectStores: (IDBDatabase) => Unit = ???
   }
 
   implicit class ObservablePimp[+E](observable: Observable[E]) {

@@ -15,33 +15,9 @@ object IndexedDbSuite extends TestSuites {
 
   implicit val scheduler = Scheduler.trampoline()
 
-  def recreateDB(name: String) = new RecreateDb(name, db => db.createObjectStore(name, lit("autoIncrement" -> true))) with Logging
+  def recreateDB(name: String) = new RecreateDb(name, db => db.createObjectStore(name, lit("autoIncrement" -> true)))
 
   val generalUseCases = TestSuite {
-
-    "play" - {
-      val obj1 = Map("x" -> 0) // store values might be anything that upickle manages to serialize
-      val obj2 = Map("y" -> 1)
-      val db = IndexedDb( // you may create new db, open, upgrade or recreate existing one
-        new NewDb("dbName", db => db.createObjectStore("storeName", lit("autoIncrement" -> true)))
-      )
-      val store = db.openStore[Int,Map[String, Int]]("storeName") //declare Store's key and value type information
-      // db requests should be combined with `flatMapOnComplete` combinator which honors idb transaction boundaries
-      store.append(List(obj1, obj2)).flatMapOnComplete { appendTuples =>
-        assert(appendTuples.length == 2)
-        val (keys, values) = appendTuples.unzip
-        assert(values.head == Map("x" -> 0))
-        store.get(keys).flatMapOnComplete { getTuples =>
-          val (keys2, _) = getTuples.unzip
-          store.delete(keys2).flatMapOnComplete { empty =>
-            store.count.flatMapOnComplete { counts =>
-              assert(counts(0) == 0)
-              db.close()
-            }
-          }
-        }
-      }
-    }
 
     "get-db-names" - {
       val idb = IndexedDb(recreateDB("get-db-names"))

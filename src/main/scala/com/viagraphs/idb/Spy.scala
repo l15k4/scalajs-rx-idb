@@ -5,34 +5,75 @@ import scala.language.higherKinds
 import scala.collection.mutable.ListBuffer
 import scala.scalajs.js
 
+/**
+ * Mixin this trait with Store to enable request logging and profiling
+ */
 trait Spy[K,V] extends Store[K,V] {
   implicit val scheduler = IndexedDb.scheduler
 
+  val stats = ListBuffer[Entry]()
+
+  private def now = new js.Date().getTime()
+  private def log(name: String, start: Double): Unit = {
+    val entry = Entry(name, new js.Date().getTime() - start)
+    stats += entry
+    Profiler.totalStats += entry
+  }
+
+  abstract override def update[C[_]](keys: C[K], entries: Map[K,V])(implicit e: Tx[C]): Observable[(K,V)] = {
+    val start = now
+    super.update(keys, entries)(e).dump("update").doOnComplete {
+      log("update", start)
+    }
+  }
+
   abstract override def get[C[_]](input: C[K])(implicit e: Tx[C]): Observable[(K,V)] = {
-    super.get(input)(e).dump("get")
+    val start = now
+    super.get(input)(e).dump("get").doOnComplete {
+      log("get", start)
+    }
   }
 
   abstract override def append[C[X] <: Iterable[X]](input: C[V])(implicit e: Tx[C]): Observable[(K,V)] = {
-    super.append(input)(e).dump("append")
+    val start = now
+    super.append(input)(e).dump("append").doOnComplete {
+      log("append", start)
+    }
   }
 
   abstract override def add(input: Map[K, V])(implicit e: Tx[Iterable]): Observable[Unit] = {
-    super.add(input)(e).dump("add")
+    val start = now
+    super.add(input)(e).dump("add").doOnComplete {
+      log("add", start)
+    }
   }
 
   abstract override def delete[C[_]](input: C[K])(implicit e: Tx[C]): Observable[Unit] = {
-    super.delete(input)(e).dump("delete")
+    val start = now
+    super.delete(input)(e).dump("delete").doOnComplete {
+      log("delete", start)
+    }
   }
 
   abstract override def count: Observable[Int] = {
-    super.count.dump("count")
+    val start = now
+    super.count.dump("count").doOnComplete {
+      log("count", start)
+    }
   }
 
   abstract override def clear: Observable[Nothing] = {
-    super.clear.dump("clear")
+    val start = now
+    super.clear.dump("clear").doOnComplete {
+      log("clear", start)
+    }
   }
 }
 
+/**
+ * Mixin this marker trait with IdbInitMode to enable IDB logging
+ */
+trait Logging
 trait Logger extends IndexedDb {
   implicit val scheduler = IndexedDb.scheduler
 
@@ -56,6 +97,10 @@ trait Logger extends IndexedDb {
 case class Entry(methodName: String, executionTime: Double)
 case class EntrySum(invocationCount: Int, executionTime: Double)
 
+/**
+ * Mixin this marker trait with IdbInitMode to enable IDB profiling
+ */
+trait Profiling
 trait Profiler extends IndexedDb {
   implicit val scheduler = IndexedDb.scheduler
   val stats = ListBuffer[Entry]()
@@ -87,7 +132,6 @@ trait Profiler extends IndexedDb {
       log("getName", start)
     }
   }
-
 
   abstract override def getStoreNames: Observable[List[String]] = {
     val start = now

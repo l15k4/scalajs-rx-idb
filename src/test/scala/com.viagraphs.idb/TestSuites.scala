@@ -36,7 +36,6 @@ abstract class TestSuites extends TestSuite {
           println(ex)
           System.exit(0)
         case Success(results) =>
-          println("\n---- Total Stats ----")
           Profiler.printout()
           print(IndexedDbSuite.generalUseCases, results)
           dom.window.setTimeout(() => System.exit(0), 50)
