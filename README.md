@@ -9,6 +9,7 @@ Primarily it is trying to be :
 
 * thanks to [uPickle](3) and its Reader/Writer type classes user just declares input/return types and uPickle does the rest. It even allows you to deserialize objects in a type safe manner without knowing what type of object you're gonna get from database (See uPickle's tagged values in sealed hierarchies)
 * a key validation type class doesn't let you store keys of unsupported types
+* there is an abstraction over CRUD operations allowing seamlessly work with both scala collections and idb key ranges
 
 ##user friendly because
 
@@ -27,11 +28,64 @@ Primarily it is trying to be :
 
 In other words, doing complicated stuff with IndexedDb directly is not that easy as one might expect.
 
-NOTE: 
+**NOTE** 
 
 * It currently depends on scala-js 0.6.0-SNAPSHOT and unaccepted [utest PR](https://github.com/lihaoyi/utest/pull/40)
-* Just the basic operations are implemented and tested so far, it's a work in progress
-* Before trying, please wait until it depends on scala-js 0.6.0 milestone version otherwise you're gonna spend some time with it !
+  * Before trying, please wait until it depends on scala-js 0.6.0 milestone version otherwise you're gonna spend some time with it !
+* Just the basic operations are tested so far, it's a work in progress
+
+
+## Examples
+
+Note that the crud operations accept either anything that is `Iterable` or any `com.viagraphs.idb.Store.Key`
+
+```scala
+val obj1 = Map("x" -> 0) // store values might be anything that upickle manages to serialize
+val obj2 = Map("y" -> 1)
+val db = IndexedDb( // you may create new db, open, upgrade or recreate existing one
+  new NewDb("dbName", db => db.createObjectStore("storeName", lit("autoIncrement" -> true)))
+)
+val store = db.openStore[Int,Map[String, Int]]("storeName") //declare Store's key and value type information
+// db requests should be combined with `flatMapOnComplete` combinator which honors idb transaction boundaries
+store.append(List(obj1, obj2)).flatMapOnComplete { appendTuples =>
+  assert(appendTuples.length == 2)
+  val (keys, values) = appendTuples.unzip
+  assert(values.head == Map("x" -> 0))
+  store.get(keys).flatMapOnComplete { getTuples =>
+    val (keys2, _) = getTuples.unzip
+    store.delete(keys2).flatMapOnComplete { empty =>
+      store.count.flatMapOnComplete { counts =>
+        assert(counts(0) == 0)
+        db.close()
+      }
+    }
+  }
+}
+
+```
+
+```scala
+val store = db.openStore[Int, Int](storeName)
+store.append(1 to 10).flatMapOnComplete { tuples =>
+  store.delete(store.lastKey).flatMapOnComplete { empty =>
+    store.count.map { count =>
+      assert(count == 9)
+    }
+    store.delete(store.firstKey).flatMapOnComplete { empty =>
+      store.count.map { count =>
+        assert(count == 8)
+      }
+      store.delete(store.rangedKey(IDBKeyRange.bound(3,5), Direction.Prev)).flatMapOnComplete { empty =>
+        store.count.map { count =>
+          assert(count == 5)
+        }
+        db.close()
+      }
+    }
+  }
+}
+
+```
 
 
   [1]: http://www.scala-js.org

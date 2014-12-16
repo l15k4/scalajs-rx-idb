@@ -1,9 +1,10 @@
 package com.viagraphs.idb
 
-import com.viagraphs.idb.IndexedDb.ObservablePimp
 import monifu.concurrent.Scheduler
-import monifu.reactive.Observable
+import org.scalajs.dom.IDBKeyRange
+import upickle._
 import utest._
+import utest.framework.TestSuite
 
 import scala.concurrent.Future
 import scala.scalajs.js.Dynamic.{literal => lit}
@@ -16,12 +17,38 @@ object IndexedDbSuite extends TestSuites {
 
   def recreateDB(name: String) = new RecreateDb(name, db => db.createObjectStore(name, lit("autoIncrement" -> true))) with Logging
 
-val generalUseCases = TestSuite {
+  val generalUseCases = TestSuite {
+
+    "play" - {
+      val obj1 = Map("x" -> 0) // store values might be anything that upickle manages to serialize
+      val obj2 = Map("y" -> 1)
+      val db = IndexedDb( // you may create new db, open, upgrade or recreate existing one
+        new NewDb("dbName", db => db.createObjectStore("storeName", lit("autoIncrement" -> true)))
+      )
+      val store = db.openStore[Int,Map[String, Int]]("storeName") //declare Store's key and value type information
+      // db requests should be combined with `flatMapOnComplete` combinator which honors idb transaction boundaries
+      store.append(List(obj1, obj2)).flatMapOnComplete { appendTuples =>
+        assert(appendTuples.length == 2)
+        val (keys, values) = appendTuples.unzip
+        assert(values.head == Map("x" -> 0))
+        store.get(keys).flatMapOnComplete { getTuples =>
+          val (keys2, _) = getTuples.unzip
+          store.delete(keys2).flatMapOnComplete { empty =>
+            store.count.flatMapOnComplete { counts =>
+              assert(counts(0) == 0)
+              db.close()
+            }
+          }
+        }
+      }
+    }
 
     "get-db-names" - {
-      IndexedDb(recreateDB("get-db-names")).underlying.asFuture.flatMap { db =>
+      val idb = IndexedDb(recreateDB("get-db-names"))
+      idb.underlying.asFuture.flatMap { db =>
         IndexedDb.getDatabaseNames.map { names =>
           assert(names.contains("get-db-names"))
+          idb.close()
           (0 until names.length).foldLeft(List[String]()) { case (acc, i) => names(i) :: acc}
         }
       }
@@ -44,81 +71,93 @@ val generalUseCases = TestSuite {
       }
     }
 
-    "add-and-getAndDelete" - {
-      val dbName = "add-and-getAndDelete"
+    "append-and-get-object" - {
+      val dbName = "append-and-get-object"
+      val obj = AnInstance("foo", 1, Map(1 -> "bar"))
+      val db = IndexedDb(recreateDB(dbName))
+      val store = db.openStore[Int,AnInstance](dbName)
+      store.append(List(obj)).flatMapOnComplete { appendTuples =>
+        assert(appendTuples.length == 1)
+        val key = appendTuples(0)._1
+        val value = appendTuples(0)._2
+        assert(value == obj)
+        assert(key == 1)
+        store.get(key :: Nil).flatMapOnComplete { getTuples =>
+          assert(getTuples.length == 1)
+          assert(obj == getTuples(0)._2)
+          db.close()
+        }
+      }.asFuture
+    }
+
+    "append-and-get" - {
+      val dbName = "append-and-get"
+      val db = IndexedDb(recreateDB(dbName))
+      val store = db.openStore[Int,String](dbName)
+      val str = "bl bla bla"
+      store.append(List(str)).flatMapOnComplete { appendTuples =>
+        assert(appendTuples.length == 1)
+        val key = appendTuples(0)._1
+        store.get(List(key)).flatMapOnComplete { getTuples =>
+          assert(getTuples.length == 1)
+          assert(str == getTuples(0)._2.toString)
+          db.close()
+        }
+      }.asFuture
+    }
+
+
+    "append-and-get-then-delete" - {
+      val dbName = "append-and-get-then-delete"
       val obj1 = Map("x" -> 0)
       val obj2 = Map("y" -> 1)
       val db = IndexedDb(recreateDB(dbName))
-      db.add[Int, Map[String, Int]](dbName, None, obj1, obj2).flatMapOnComplete { keys =>
-          assert(keys == Seq(1, 2))
-          db.getAndDelete[Int, Map[String, Int]](dbName, keys: _*)
-      }.flatMapOnComplete { values =>
-          assert(values(0)("x") == 0)
-          assert(values(1)("y") == 1)
-          db.count(dbName).map { count =>
-            assert(count == 0)
-            db.close()
-            count
+      val store = db.openStore[Int,Map[String, Int]](dbName)
+      store.append(List(obj1, obj2)).flatMapOnComplete { appendTuples =>
+        assert(appendTuples.length == 2)
+        val (keys, values) = appendTuples.unzip
+        assert(values.head == Map("x" -> 0))
+        store.get(keys).flatMapOnComplete { getTuples =>
+          val (keys2, _) = getTuples.unzip
+          store.delete(keys2).flatMapOnComplete { whatever =>
+            store.count.flatMapOnComplete { counts =>
+              assert(counts(0) == 0)
+              db.close()
+            }
           }
+        }
       }.asFuture
     }
 
     "count-records" - {
       val dbName = "count-records"
       val db = IndexedDb(recreateDB(dbName))
-      db.count(dbName).asFuture.map { count =>
-        assert(count.get == 0)
-        count
-      }
-      db.add[Int, Int](dbName, None, 1, 2, 3, 4).flatMapOnComplete { keys =>
-          assert(keys == Seq(1, 2, 3, 4))
-          db.count(dbName).map { count =>
-            assert(count == 4)
+      val store = db.openStore[Int, Int](dbName)
+      store.count.flatMapOnComplete { counts =>
+        assert(counts(0) == 0)
+        store.append(List(1, 2, 3, 4)).flatMapOnComplete { tuples =>
+          val (keys, values) = tuples.unzip
+          assert(keys == List(1, 2, 3, 4))
+          assert(values == List(1, 2, 3, 4))
+          store.count.flatMapOnComplete { counts =>
+            assert(counts(0) == 4)
             db.close()
-            count
           }
+        }
       }.asFuture
     }
+
 
     "clear-store" - {
       val dbName = "clear-store"
       val db = IndexedDb(recreateDB(dbName))
-      db.add[Int, Int](dbName, None, 1, 2, 3, 4).flatMapOnComplete { keys =>
-        assert(keys == Seq(1, 2, 3, 4))
-        (db.clear(dbName) ++ db.count(dbName)).map { count: Int =>
-          assert(count == 0)
-          db.close()
-          count
-        }
-      }.asFuture
-    }
-
-    "add-and-get-object" - {
-      val dbName = "add-and-get-object"
-      val obj = AnInstance("trol", 1, Map(1 -> "trol"))
-      val db = IndexedDb(recreateDB(dbName))
-      db.add[Int, AnInstance](dbName, None, obj).flatMapOnComplete { keys =>
-        assert(keys.length == 1)
-        db.get[Int, AnInstance](dbName, keys(0)).flatMapOnComplete { values =>
-          assert(values.length == 1)
-          assert(obj == values(0))
-          db.close()
-          Observable.from(values)
-        }
-      }.asFuture
-    }
-
-    "add-and-get" - {
-      val dbName = "add-and-get"
-      val db = IndexedDb(recreateDB(dbName))
-      val str = "bl bla bla"
-      db.add[Int, String](dbName, None, str).flatMapOnComplete { keys =>
-        assert(keys.length == 1)
-        db.get[Int, String](dbName, keys(0)).flatMapOnComplete { values =>
-          assert(values.length == 1)
-          assert(str == values(0).toString)
-          db.close()
-          Observable.from(values)
+      val store = db.openStore[Int, Int](dbName)
+      store.add(Map(1->1, 2->2, 3->3, 4->4)).flatMapOnComplete { tuples =>
+        store.clear.flatMapOnComplete { empty =>
+          store.count.flatMapOnComplete { counts =>
+            assert(counts(0) == 0)
+            db.close()
+          }
         }
       }.asFuture
     }
@@ -126,49 +165,70 @@ val generalUseCases = TestSuite {
     "add-and-get-multiple" - {
       val dbName = "add-and-get-multiple"
       val db = IndexedDb(recreateDB(dbName))
-      db.add[Int, String](dbName, None, (0 until 10).map(_.toString): _*).flatMapOnComplete { keys =>
-          assert(keys == (1 to 10).toSeq)
-          db.get[Int, String](dbName, keys: _*).flatMapOnComplete { values =>
-            assert(values == (0 until 10).map(_.toString).toSeq)
-            db.close()
-            Observable.from(values)
-          }
+      val store = db.openStore[Int, String](dbName)
+      store.add((1 to 10).map(k => k -> k.toString).toMap).flatMapOnComplete { tuples =>
+        store.get((1 to 10).toSeq).flatMapOnComplete { tuples =>
+          val (keys, values) = tuples.unzip
+          println(keys)
+          println(values)
+          assert(values == (1 to 10).map(_.toString).toSeq)
+          db.close()
+        }
       }.asFuture
     }
 
-    "get-last" - {
-      val dbName = "get-last"
+    "get-key-range" - {
+      val dbName = "get-key-range"
       val db = IndexedDb(recreateDB(dbName))
-      db.add[Int, String](dbName, None, (0 until 10).map(_.toString): _*).flatMapOnComplete { keys =>
-          assert(keys == (1 to 10).toSeq)
-          db.getLast[Int, String](dbName).flatMapOnComplete { tuples =>
-            assert(tuples.length == 1)
-            val (lastKey, lastValue) = tuples(0)
-            assert(lastValue.toString == 9.toString)
-            assert(lastKey == 10)
-            db.close()
-            Observable.from(tuples)
+      val store = db.openStore[Int, Int](dbName)
+      store.add((1 to 10).map(k => k -> k).toMap).flatMapOnComplete { tuples =>
+        store.get(store.lastKey).flatMapOnComplete { lastTuples =>
+          assert(lastTuples.length == 1)
+          val (lastKey, lastValue) = lastTuples(0)
+          assert(lastValue == 10)
+          assert(lastKey == 10)
+          store.get(store.firstKey).flatMapOnComplete { firstTuples =>
+            assert(firstTuples.length == 1)
+            val (firstKey, firstVal) = firstTuples(0)
+            assert(firstVal == 1)
+            assert(firstKey == 1)
+            store.get(store.rangedKey(IDBKeyRange.bound(3,7), Direction.Next)).flatMapOnComplete { ascTuples =>
+              assert(ascTuples.length == 5)
+              val (keys, vals) = ascTuples.unzip
+              assert(keys == Seq(3,4,5,6,7))
+              assert(vals == Seq(3,4,5,6,7))
+              store.get(store.rangedKey(IDBKeyRange.bound(3,7), Direction.Prev)).flatMapOnComplete { descTuples =>
+                assert(descTuples.length == 5)
+                val (keys, vals) = descTuples.unzip
+                assert(keys == Seq(7,6,5,4,3))
+                assert(vals == Seq(7,6,5,4,3))
+                db.close()
+              }
+            }
           }
+        }
       }.asFuture
     }
 
-    "get-and-delete-last" - {
-      val dbName = "get-and-delete-last"
+    "delete-key-range" - {
+      val dbName = "delete-key-range"
       val db = IndexedDb(recreateDB(dbName))
-      db.add[Int, String](dbName, None, (1 to 10).map(_.toString): _*).flatMapOnComplete { keys =>
-        assert(keys == (1 to 10).toSeq)
-        db.getAndDeleteLast[Int, String](dbName).flatMapOnComplete { tuples =>
-          assert(tuples.length == 1)
-          val (deletedKey, deletedValue) = tuples(0)
-          assert(deletedKey == 10)
-          assert(deletedValue.toString == 10.toString)
-          db.getLast[Int, String](dbName).flatMapOnComplete { lastTuples =>
-            assert(lastTuples.length == 1)
-            val (lastKey, lastValue) = lastTuples(0)
-            assert(lastValue.toString == 9.toString)
-            assert(lastKey == 9)
-            db.close()
-            Observable.from(lastTuples)
+      val store = db.openStore[Int, Int](dbName)
+      store.append(1 to 10).flatMapOnComplete { tuples =>
+        store.delete(store.lastKey).flatMapOnComplete { empty =>
+          store.count.map { count =>
+            assert(count == 9)
+          }
+          store.delete(store.firstKey).flatMapOnComplete { empty =>
+            store.count.map { count =>
+              assert(count == 8)
+            }
+            store.delete(store.rangedKey(IDBKeyRange.bound(3,5), Direction.Prev)).flatMapOnComplete { empty =>
+              store.count.map { count =>
+                assert(count == 5)
+              }
+              db.close()
+            }
           }
         }
       }.asFuture
@@ -177,9 +237,21 @@ val generalUseCases = TestSuite {
     "get-last-on-empty-store" - {
       val dbName = "get-last-on-empty-store"
       val db = IndexedDb(recreateDB(dbName))
-      db.getLast[Int, String](dbName).map[Nothing] { res =>
-        throw new IllegalStateException("There is supposed to be no record in get-last-on-empty-store")
-      }.doOnComplete(db.close()).asFuture
+      val store = db.openStore[Int, String](dbName)
+      store.get(store.lastKey).flatMapOnComplete { res =>
+        assert(res.length == 0)
+        db.close()
+      }.asFuture
+    }
+
+    "get-nonexistent-key" - {
+      val dbName = "get-nonexistent-key"
+      val db = IndexedDb(recreateDB(dbName))
+      val store = db.openStore[Int, String](dbName)
+      store.get(List(1)).flatMapOnComplete { res =>
+        assert(res.length == 0)
+        db.close()
+      }.asFuture
     }
   }
 
