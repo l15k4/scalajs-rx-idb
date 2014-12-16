@@ -1,6 +1,6 @@
 package com.viagraphs.idb
 
-import monifu.reactive.Ack.Continue
+import monifu.reactive.Ack.{Cancel, Continue}
 import monifu.reactive.internals.FutureAckExtensions
 import monifu.reactive.{Ack, Observable, Observer}
 import org.scalajs.dom._
@@ -167,18 +167,6 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
     }
   }
 
-  object Store {
-    import scala.collection.immutable.TreeMap
-    implicit def TreeMapW[K: W : Ordering, V: W]: W[TreeMap[K, V]] = W[TreeMap[K, V]](
-      x => Js.Arr(x.toSeq.map(writeJs[(K, V)]): _*)
-    )
-    implicit def TreeMapR[K: R : Ordering, V: R]: R[TreeMap[K, V]] = R[TreeMap[K, V]](
-      Internal.validate("Array(n)") {
-        case x: Js.Arr => TreeMap(x.value.map(readJs[(K, V)]): _*)
-      }
-    )
-  }
-
   abstract class Request[I, O, C[_]](val input: C[I], tx: Tx[C]) extends Observable[O] {
     def txAccess: TxAccess
     def execute(store: IDBObjectStore, input: Either[I, Key[I]]): IDBRequest
@@ -193,10 +181,49 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
     }
   }
 
+  def update[C[_]](keys: C[K], entries: Map[K,V])(implicit e: Tx[C]): Observable[(K,V)] = new Request[K, (K,V), C](keys, e) {
+    def txAccess = ReadWrite(storeName)
+
+    def execute(store: IDBObjectStore, input: Either[K, Key[K]]) = input match {
+      case Right(keyRange) =>
+        store.openCursor(keyRange.range, keyRange.direction.value)
+      case Left(key) =>
+        val value = entries.getOrElse(key, throw new IllegalArgumentException(s"Key $key is not present in update entries !"))
+        store.put(
+          json.writeJs(writeJs[V](value)).asInstanceOf[js.Any],
+          json.writeJs(writeJs[K](key)).asInstanceOf[js.Any]
+        )
+    }
+
+    def onSuccess(result: Either[(K, Any), IDBCursorWithValue], observer: Observer[(K, V)]): Future[Ack] = {
+      result match {
+        case Right(cursor) =>
+          val promise = Promise[Ack]()
+          val key = readJs[K](json.readJs(cursor.key))
+          val value = entries.getOrElse(key, throw new IllegalArgumentException(s"Key $key is not present in update entries !"))
+          val req = cursor.update(json.writeJs(writeJs[V](value)).asInstanceOf[js.Any])
+          req.onsuccess = (e: Event) =>
+            promise.success(Continue)
+          req.onerror = (e: ErrorEvent) => {
+            observer.onError(new IDbRequestException(s"Updating cursor '$key' with '$value' failed", req.error))
+            promise.success(Cancel)
+          }
+          promise.future
+        case Left((key,value)) =>
+          (value : UndefOr[Any]).fold[Future[Ack]](Continue) { anyVal =>
+            observer.onNext(
+              key -> readJs[V](json.readJs(anyVal))
+            )
+          }
+      }
+    }
+    def onError(input: Option[K]) = s"updating ${input.getOrElse("")} from $storeName failed"
+  }
+
   /**
    * @note that values might be undefined if a key doesn't exist !
    */
-  def get[C[_]](input: C[K])(implicit e: Tx[C]): Observable[(K,V)] = new Request[K, (K, V), C](input, e) {
+  def get[C[_]](keys: C[K])(implicit e: Tx[C]): Observable[(K,V)] = new Request[K, (K, V), C](keys, e) {
     val txAccess = ReadOnly(storeName)
 
     def execute(store: IDBObjectStore, input: Either[K, Key[K]]) = input match {
@@ -224,7 +251,7 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
     def onError(input: Option[K] = None) = s"getting ${input.getOrElse("")} from $storeName failed"
   }
 
-  def append[C[X] <: Iterable[X]](input: C[V])(implicit e: Tx[C]): Observable[(K,V)] = new Request[V, (K, V), C](input, e) {
+  def append[C[X] <: Iterable[X]](values: C[V])(implicit e: Tx[C]): Observable[(K,V)] = new Request[V, (K, V), C](values, e) {
     val txAccess = ReadWrite(storeName)
 
     def execute(store: IDBObjectStore, input: Either[V, Key[V]]) = input match {
@@ -249,7 +276,7 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
   /**
    * @note that structured clones of values are created, beware that structure clone internal idb algorithm may fail
    */
-  def add(input: Map[K, V])(implicit e: Tx[Iterable]): Observable[Unit] = new Request[(K, V), Unit, Iterable](input, e) {
+  def add(entries: Map[K, V])(implicit e: Tx[Iterable]): Observable[Unit] = new Request[(K, V), Unit, Iterable](entries, e) {
     val txAccess = ReadWrite(storeName)
 
     def execute(store: IDBObjectStore, input: Either[(K, V), Key[(K, V)]]) = input match {
@@ -267,7 +294,7 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
     def onError(input: Option[(K, V)] = None) = s"appending ${input.getOrElse("")} to $storeName failed"
   }
 
-  def delete[C[_]](input: C[K])(implicit e: Tx[C]): Observable[Unit] = new Request[K, Unit, C](input, e) {
+  def delete[C[_]](keys: C[K])(implicit e: Tx[C]): Observable[Unit] = new Request[K, Unit, C](keys, e) {
     val txAccess = ReadWrite(storeName)
 
     def execute(store: IDBObjectStore, input: Either[K, Key[K]]) = input match {
@@ -281,12 +308,15 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
       result match {
         case Left(_) => Continue
         case Right(cursor) =>
+          val key = cursor.key
           val promise = Promise[Ack]()
           val req = cursor.delete()
           req.onsuccess = (e: Event) =>
             promise.success(Continue)
-          req.onerror = (e: ErrorEvent) =>
-            observer.onError(new IDbRequestException("Deleting cursor failed", req.error))
+          req.onerror = (e: ErrorEvent) => {
+            observer.onError(new IDbRequestException(s"Deleting cursor '$key' failed", req.error))
+            promise.success(Cancel)
+          }
           promise.future
       }
     }
@@ -325,4 +355,16 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
     }
   }
 
+}
+
+object Store {
+  import scala.collection.immutable.TreeMap
+  implicit def TreeMapW[K: W : Ordering, V: W]: W[TreeMap[K, V]] = W[TreeMap[K, V]](
+    x => Js.Arr(x.toSeq.map(writeJs[(K, V)]): _*)
+  )
+  implicit def TreeMapR[K: R : Ordering, V: R]: R[TreeMap[K, V]] = R[TreeMap[K, V]](
+    Internal.validate("Array(n)") {
+      case x: Js.Arr => TreeMap(x.value.map(readJs[(K, V)]): _*)
+    }
+  )
 }

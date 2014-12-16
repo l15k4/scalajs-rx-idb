@@ -33,6 +33,8 @@ In other words, doing complicated stuff with IndexedDb directly is not that easy
 * It currently depends on scala-js 0.6.0-SNAPSHOT and unaccepted [utest PR](https://github.com/lihaoyi/utest/pull/40)
   * Before trying, please wait until it depends on scala-js 0.6.0 milestone version otherwise you're gonna spend some time with it !
 * Just the basic operations are tested so far, it's a work in progress
+* The performance might get a little worse in comparison with direct IDB access
+  * But after you spend some time with IDB you'll know that loosing a few milliseconds is always better than lock starvation that might put the entire application down or waste hours of troubleshooting
 
 
 ## Examples

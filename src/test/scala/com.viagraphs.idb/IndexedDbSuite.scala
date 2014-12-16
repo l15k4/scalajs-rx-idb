@@ -169,8 +169,6 @@ object IndexedDbSuite extends TestSuites {
       store.add((1 to 10).map(k => k -> k.toString).toMap).flatMapOnComplete { tuples =>
         store.get((1 to 10).toSeq).flatMapOnComplete { tuples =>
           val (keys, values) = tuples.unzip
-          println(keys)
-          println(values)
           assert(values == (1 to 10).map(_.toString).toSeq)
           db.close()
         }
@@ -253,6 +251,36 @@ object IndexedDbSuite extends TestSuites {
         db.close()
       }.asFuture
     }
-  }
 
+    "update-entries" - {
+      val dbName = "update-entries"
+      val db = IndexedDb(recreateDB(dbName))
+      val store = db.openStore[Int, Int](dbName)
+      store.append(1 to 10).flatMapOnComplete { tuples =>
+        store.update(9 to 10, Map(9->90, 10->100)).flatMapOnComplete { tuples =>
+          store.get(9 to 10).flatMapOnComplete { result =>
+            val (_, values) = result.unzip
+            assert(values == Seq(90,100))
+            db.close()
+          }
+        }
+      }.asFuture
+    }
+
+    "update-entries-with-range" - {
+      val dbName = "update-entries"
+      val db = IndexedDb(recreateDB(dbName))
+      val store = db.openStore[Int, Int](dbName)
+      store.append(1 to 10).flatMapOnComplete { tuples =>
+        val range = store.rangedKey(IDBKeyRange.bound(9,10), Direction.Next)
+        store.update(range, Map(9->90, 10->100)).flatMapOnComplete { tuples =>
+          store.get(range).flatMapOnComplete { result =>
+            val (_, values) = result.unzip
+            assert(values == Seq(90,100))
+            db.close()
+          }
+        }
+      }.asFuture
+    }
+  }
 }
