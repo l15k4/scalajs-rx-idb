@@ -1,5 +1,6 @@
 package com.viagraphs.idb
 
+import monifu.concurrent.Scheduler
 import monifu.reactive.Ack.{Cancel, Continue}
 import monifu.reactive.internals.FutureAckExtensions
 import monifu.reactive.{Ack, Observable, Observer}
@@ -7,7 +8,8 @@ import org.scalajs.dom._
 import upickle.Aliases.{R, W}
 import upickle._
 
-import scala.concurrent.{Promise, Future}
+import scala.collection.mutable.ArrayBuffer
+import scala.concurrent.{Future, Promise}
 import scala.language.higherKinds
 import scala.scalajs.js
 import scala.scalajs.js.UndefOr
@@ -310,7 +312,7 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
    * @return An empty observable that just completes or errors out
    * @note that structured clones of values are created, beware that structure clone internal idb algorithm may fail
    */
-  def add(entries: Map[K, V])(implicit e: Tx[Iterable]): Observable[Unit] = new Request[(K, V), Unit, Iterable](entries, e) {
+  def add(entries: Map[K, V])(implicit e: Tx[Iterable]): Observable[Nothing] = new Request[(K, V), Nothing, Iterable](entries, e) {
     val txAccess = ReadWrite(storeName)
 
     def execute(store: IDBObjectStore, input: Either[(K, V), Key[(K, V)]]) = input match {
@@ -321,7 +323,7 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
       case x => throw new IllegalStateException("Cannot happen, add doesn't support KeyRanges")
     }
 
-    def onSuccess(result: Either[((K, V), Any), IDBCursorWithValue], observer: Observer[Unit]): Future[Ack] = {
+    def onSuccess(result: Either[((K, V), Any), IDBCursorWithValue], observer: Observer[Nothing]): Future[Ack] = {
       Continue
     }
 
@@ -332,7 +334,7 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
    * @param keys of records to delete
    * @return empty observable that either completes or errors out when records are deleted
    */
-  def delete[C[_]](keys: C[K])(implicit e: Tx[C]): Observable[Unit] = new Request[K, Unit, C](keys, e) {
+  def delete[C[_]](keys: C[K])(implicit e: Tx[C]): Observable[Nothing] = new Request[K, Nothing, C](keys, e) {
     val txAccess = ReadWrite(storeName)
 
     def execute(store: IDBObjectStore, input: Either[K, Key[K]]) = input match {
@@ -342,7 +344,7 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
         store.delete(json.writeJs(writeJs[K](key)).asInstanceOf[js.Any])
     }
 
-    def onSuccess(result: Either[(K, Any), IDBCursorWithValue], observer: Observer[Unit]): Future[Ack] = {
+    def onSuccess(result: Either[(K, Any), IDBCursorWithValue], observer: Observer[Nothing]): Future[Ack] = {
       result match {
         case Left(_) => Continue
         case Right(cursor) =>
@@ -398,7 +400,6 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
       }(storeTx => errorMsg)
     }
   }
-
 }
 
 object Store {
@@ -411,4 +412,77 @@ object Store {
       case x: Js.Arr => TreeMap(x.value.map(readJs[(K, V)]): _*)
     }
   )
+  implicit class RequestPimp[+E](observable: Observable[E]) {
+    def flatMapOnComplete[U](f: Seq[E] => Observable[U]): Observable[U] = {
+      def emptyYieldingBuffer[T](source: Observable[T], count: Int)(implicit s: Scheduler): Observable[Seq[T]] =
+        Observable.create { observer =>
+          source.unsafeSubscribe(new Observer[T] {
+            private[this] var buffer = ArrayBuffer.empty[T]
+            private[this] var lastAck = Continue : Future[Ack]
+            private[this] var size = 0
+
+            def onNext(elem: T): Future[Ack] = {
+              size += 1
+              buffer.append(elem)
+              if (size >= count) {
+                val oldBuffer = buffer
+                buffer = ArrayBuffer.empty[T]
+                size = 0
+
+                lastAck = observer.onNext(oldBuffer)
+                lastAck
+              }
+              else
+                Continue
+            }
+
+            def onError(ex: Throwable): Unit = {
+              observer.onError(ex)
+              buffer = null
+            }
+
+            def onComplete(): Unit = {
+              lastAck.onContinueCompleteWith(observer, buffer)
+              buffer = null
+            }
+          })
+        }
+      flatMapOnComplete(emptyYieldingBuffer(observable, Integer.MAX_VALUE)(IndexedDb.scheduler).map(f))
+    }
+
+    private def flatMapOnComplete[U, T](source: Observable[T])(implicit ev: T <:< Observable[U]): Observable[U] = {
+      Observable.create[U] { observerU =>
+        source.unsafeSubscribe(new Observer[T] {
+          private[this] var childObservable: T = _
+
+          def onNext(elem: T) = {
+            childObservable = elem
+            Continue
+          }
+
+          def onError(ex: Throwable) = {
+            observerU.onError(ex)
+          }
+
+          def onComplete() = {
+            Option(childObservable).fold(observerU.onComplete()) { obs =>
+              obs.unsafeSubscribe(new Observer[U] {
+                def onNext(elem: U) = {
+                  observerU.onNext(elem)
+                }
+
+                def onError(ex: Throwable): Unit = {
+                  observerU.onError(ex)
+                }
+
+                def onComplete(): Unit = {
+                  observerU.onComplete()
+                }
+              })
+            }
+          }
+        })
+      }
+    }
+  }
 }

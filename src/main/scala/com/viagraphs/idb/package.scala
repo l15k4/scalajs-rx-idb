@@ -1,13 +1,9 @@
 package com.viagraphs
 
-import monifu.concurrent.Scheduler
 import monifu.reactive.Ack.{Cancel, Continue}
-import monifu.reactive.internals.FutureAckExtensions
-import monifu.reactive.{Ack, Observable, Observer}
+import monifu.reactive.{Observable, Observer}
 import org.scalajs.dom.IDBDatabase
 
-import scala.collection.mutable.ArrayBuffer
-import scala.concurrent.Future
 import scala.util.control.NonFatal
 
 package object idb {
@@ -83,77 +79,5 @@ package object idb {
           }
         }
       )
-
-    def flatMapOnComplete[U](f: Seq[E] => Observable[U]): Observable[U] = {
-      def emptyYieldingBuffer[T](source: Observable[T], count: Int)(implicit s: Scheduler): Observable[Seq[T]] =
-        Observable.create { observer =>
-          source.unsafeSubscribe(new Observer[T] {
-            private[this] var buffer = ArrayBuffer.empty[T]
-            private[this] var lastAck = Continue : Future[Ack]
-            private[this] var size = 0
-
-            def onNext(elem: T): Future[Ack] = {
-              size += 1
-              buffer.append(elem)
-              if (size >= count) {
-                val oldBuffer = buffer
-                buffer = ArrayBuffer.empty[T]
-                size = 0
-
-                lastAck = observer.onNext(oldBuffer)
-                lastAck
-              }
-              else
-                Continue
-            }
-
-            def onError(ex: Throwable): Unit = {
-              observer.onError(ex)
-              buffer = null
-            }
-
-            def onComplete(): Unit = {
-              lastAck.onContinueCompleteWith(observer, buffer)
-              buffer = null
-            }
-          })
-        }
-      flatMapOnComplete(emptyYieldingBuffer(observable, Integer.MAX_VALUE)(IndexedDb.scheduler).map(f))
-    }
-
-    private def flatMapOnComplete[U, T](source: Observable[T])(implicit ev: T <:< Observable[U]): Observable[U] = {
-      Observable.create[U] { observerU =>
-        source.unsafeSubscribe(new Observer[T] {
-          private[this] var childObservable: T = _
-
-          def onNext(elem: T) = {
-            childObservable = elem
-            Continue
-          }
-
-          def onError(ex: Throwable) = {
-            observerU.onError(ex)
-          }
-
-          def onComplete() = {
-            Option(childObservable).fold(observerU.onComplete()) { obs =>
-              obs.unsafeSubscribe(new Observer[U] {
-                def onNext(elem: U) = {
-                  observerU.onNext(elem)
-                }
-
-                def onError(ex: Throwable): Unit = {
-                  observerU.onError(ex)
-                }
-
-                def onComplete(): Unit = {
-                  observerU.onComplete()
-                }
-              })
-            }
-          }
-        })
-      }
-    }
   }
 }

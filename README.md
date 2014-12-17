@@ -39,7 +39,8 @@ In other words, doing complicated stuff with IndexedDb directly is not that easy
 
 ## Examples
 
-Note that the crud operations accept either anything that is `Iterable` or any `com.viagraphs.idb.Store.Key`
+* The best place to look at examples is IndexedDbSuite
+* Note that the crud operations accept either anything that is `Iterable` or any `com.viagraphs.idb.Store.Key`
 
 ```scala
 val obj1 = Map("x" -> 0) // store values might be anything that upickle manages to serialize

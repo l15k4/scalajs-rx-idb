@@ -41,14 +41,14 @@ trait Spy[K,V] extends Store[K,V] {
     }
   }
 
-  abstract override def add(input: Map[K, V])(implicit e: Tx[Iterable]): Observable[Unit] = {
+  abstract override def add(input: Map[K, V])(implicit e: Tx[Iterable]): Observable[Nothing] = {
     val start = now
     super.add(input)(e).dump("add").doOnComplete {
       log("add", start)
     }
   }
 
-  abstract override def delete[C[_]](input: C[K])(implicit e: Tx[C]): Observable[Unit] = {
+  abstract override def delete[C[_]](input: C[K])(implicit e: Tx[C]): Observable[Nothing] = {
     val start = now
     super.delete(input)(e).dump("delete").doOnComplete {
       log("delete", start)

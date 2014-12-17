@@ -5,14 +5,14 @@ import org.scalajs.dom.IDBKeyRange
 import upickle._
 import utest._
 import utest.framework.TestSuite
-
+import Store._
 import scala.concurrent.Future
 import scala.scalajs.js.Dynamic.{literal => lit}
-
 case class AnInstance(a: String, b: Int, c: Map[Int,String])
 
 object IndexedDbSuite extends TestSuites {
 
+  // even async scheduler is supported, it honors transactions too and it seems to perform better
   implicit val scheduler = Scheduler.trampoline()
 
   def recreateDB(name: String) = new RecreateDb(name, db => db.createObjectStore(name, lit("autoIncrement" -> true)))
