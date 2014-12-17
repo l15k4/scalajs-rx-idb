@@ -8,6 +8,7 @@ import org.scalajs.dom._
 import upickle.Aliases.{R, W}
 import upickle._
 
+import scala.annotation.implicitNotFound
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.{Future, Promise}
 import scala.language.higherKinds
@@ -57,6 +58,7 @@ object Direction {
 /**
  * Type Class that puts a view bound on key types. Value types are not restricted much so I don't handle that
  */
+@implicitNotFound("No implicit ValidKey defined for ${K}, thus it is not a valid Store Key type")
 sealed trait ValidKey[K]
 object ValidKey {
   implicit object StringOk extends ValidKey[String]
@@ -102,6 +104,7 @@ case class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying:
    * Type class representing a transaction strategy over request input that is either [[Iterable]] or [[Key]]
    * @tparam C either [[Iterable]] or [[Key]] type constructor
    */
+  @implicitNotFound("No implicit Tx defined for ${C}, only [[Key]] and [[Iterable]] types are supported")
   trait Tx[C[_]] {
     def execute[I, O](request: Request[I, O, C], tx: IDBTransaction, observer: Observer[O]): Unit
   }
