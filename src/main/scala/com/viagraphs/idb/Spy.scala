@@ -1,6 +1,7 @@
 package com.viagraphs.idb
 
 import monifu.reactive.Observable
+import upickle.Aliases.W
 import scala.language.higherKinds
 import scala.collection.mutable.ListBuffer
 import scala.scalajs.js
@@ -34,17 +35,10 @@ trait Spy[K,V] extends Store[K,V] {
     }
   }
 
-  abstract override def append[C[X] <: Iterable[X]](input: C[V])(implicit e: Tx[C]): Observable[(K,V)] = {
+  abstract override def add[T, C[X] <: Iterable[X]](input: C[T])(implicit p: StoreKeyPolicy[T], tx: Tx[C]): Observable[(K,V)] = {
     val start = now
-    super.append(input)(e).dump("append").doOnComplete {
+    super.add(input)(p,tx).dump("append").doOnComplete {
       log("append", start)
-    }
-  }
-
-  abstract override def add(input: Map[K, V])(implicit e: Tx[Iterable]): Observable[Nothing] = {
-    val start = now
-    super.add(input)(e).dump("add").doOnComplete {
-      log("add", start)
     }
   }
 

@@ -2,7 +2,7 @@ package com.viagraphs
 
 import monifu.reactive.Ack.{Cancel, Continue}
 import monifu.reactive.{Observable, Observer}
-import org.scalajs.dom.IDBDatabase
+import org.scalajs.dom.{DOMError, IDBDatabase}
 
 import scala.util.control.NonFatal
 
@@ -72,5 +72,44 @@ package object idb {
           }
         }
       )
+  }
+
+  class IDbException(msg: String, cause: Throwable) extends Exception(msg, cause)
+  case class IDbRequestException(message: String, error: DOMError) extends IDbException(message, new Exception(error.name))
+  case class IDbTxException(message: String, error: DOMError) extends IDbException(message, new Exception(error.name))
+
+  /**
+   * If multiple "readwrite" transactions are attempting to access the same object store (i.e. if they have overlapping scope),
+   * the transaction that was created first must be the transaction which gets access to the object store first.
+   * Due to the requirements in the previous paragraph, this also means that it is the only transaction which has access to the object store until the transaction is finished.
+   */
+  //TODO these constants are typed as java.lang.String in scala-js-dom which throws an error if not implemented by browsers
+  sealed trait TxAccess {
+    def value: String
+    def storeNames: Seq[String]
+  }
+  case class ReadWrite(storeNames: String*) extends TxAccess {
+    val value = "readwrite" /*(IDBTransaction.READ_WRITE : UndefOr[String]).getOrElse("readwrite")*/
+  }
+  case class ReadOnly(storeNames: String*) extends TxAccess {
+    val value = "readonly" /*(IDBTransaction.READ_ONLY : UndefOr[String]).getOrElse("readonly")*/
+  }
+  case class VersionChange(storeNames: String*) extends TxAccess {
+    val value = "versionchange" /*(IDBTransaction.VERSION_CHANGE : UndefOr[String]).getOrElse("versionchange")*/
+  }
+
+  /**
+   * KeyRange might be iterated even descendingly (prev)
+   */
+  sealed trait Direction {
+    def value: String
+  }
+  object Direction {
+    case object Next extends Direction {
+      def value: String = "next"
+    }
+    case object Prev extends Direction {
+      def value: String = "prev"
+    }
   }
 }

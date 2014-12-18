@@ -5,7 +5,7 @@ import org.scalajs.dom.IDBKeyRange
 import upickle._
 import utest._
 import utest.framework.TestSuite
-import Store._
+import TypeClasses._
 import scala.concurrent.Future
 import scala.scalajs.js.Dynamic.{literal => lit}
 case class AnInstance(a: String, b: Int, c: Map[Int,String])
@@ -52,7 +52,7 @@ object IndexedDbSuite extends TestSuites {
       val obj = AnInstance("foo", 1, Map(1 -> "bar"))
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int,AnInstance](dbName)
-      store.append(List(obj)).flatMapOnComplete { appendTuples =>
+      store.add(List(obj)).flatMapOnComplete { appendTuples =>
         assert(appendTuples.length == 1)
         val key = appendTuples(0)._1
         val value = appendTuples(0)._2
@@ -71,7 +71,7 @@ object IndexedDbSuite extends TestSuites {
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int,String](dbName)
       val str = "bl bla bla"
-      store.append(List(str)).flatMapOnComplete { appendTuples =>
+      store.add(List(str)).flatMapOnComplete { appendTuples: Seq[(Int,String)] =>
         assert(appendTuples.length == 1)
         val key = appendTuples(0)._1
         store.get(List(key)).flatMapOnComplete { getTuples =>
@@ -82,19 +82,19 @@ object IndexedDbSuite extends TestSuites {
       }.asFuture
     }
 
-
     "append-and-get-then-delete" - {
       val dbName = "append-and-get-then-delete"
       val obj1 = Map("x" -> 0)
       val obj2 = Map("y" -> 1)
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int,Map[String, Int]](dbName)
-      store.append(List(obj1, obj2)).flatMapOnComplete { appendTuples =>
+      store.add(List(obj1, obj2)).flatMapOnComplete { appendTuples =>
         assert(appendTuples.length == 2)
         val (keys, values) = appendTuples.unzip
         assert(values.head == Map("x" -> 0))
         store.get(keys).flatMapOnComplete { getTuples =>
-          val (keys2, _) = getTuples.unzip
+          val (keys2, values2) = getTuples.unzip
+          assert(values2 == Seq(obj1, obj2))
           store.delete(keys2).flatMapOnComplete { whatever =>
             store.count.flatMapOnComplete { counts =>
               assert(counts(0) == 0)
@@ -111,7 +111,7 @@ object IndexedDbSuite extends TestSuites {
       val store = db.openStore[Int, Int](dbName)
       store.count.flatMapOnComplete { counts =>
         assert(counts(0) == 0)
-        store.append(List(1, 2, 3, 4)).flatMapOnComplete { tuples =>
+        store.add(List(1, 2, 3, 4)).flatMapOnComplete { tuples =>
           val (keys, values) = tuples.unzip
           assert(keys == List(1, 2, 3, 4))
           assert(values == List(1, 2, 3, 4))
@@ -142,7 +142,7 @@ object IndexedDbSuite extends TestSuites {
       val dbName = "add-and-get-multiple"
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int, String](dbName)
-      store.add((1 to 10).map(k => k -> k.toString).toMap).flatMapOnComplete { tuples =>
+      store.add((1 to 10).map(k => k -> k.toString)).flatMapOnComplete { tuples =>
         store.get((1 to 10).toSeq).flatMapOnComplete { tuples =>
           val (keys, values) = tuples.unzip
           assert(values == (1 to 10).map(_.toString).toSeq)
@@ -188,7 +188,7 @@ object IndexedDbSuite extends TestSuites {
       val dbName = "delete-key-range"
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int, Int](dbName)
-      store.append(1 to 10).flatMapOnComplete { tuples =>
+      store.add(1 to 10).flatMapOnComplete { tuples =>
         store.delete(store.lastKey).flatMapOnComplete { empty =>
           store.count.map { count =>
             assert(count == 9)
@@ -232,7 +232,7 @@ object IndexedDbSuite extends TestSuites {
       val dbName = "update-entries"
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int, Int](dbName)
-      store.append(1 to 10).flatMapOnComplete { tuples =>
+      store.add(1 to 10).flatMapOnComplete { tuples =>
         store.update(9 to 10, Map(9->90, 10->100)).flatMapOnComplete { tuples =>
           store.get(9 to 10).flatMapOnComplete { result =>
             val (_, values) = result.unzip
@@ -247,7 +247,7 @@ object IndexedDbSuite extends TestSuites {
       val dbName = "update-entries"
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int, Int](dbName)
-      store.append(1 to 10).flatMapOnComplete { tuples =>
+      store.add(1 to 10).flatMapOnComplete { tuples =>
         val range = store.rangedKey(IDBKeyRange.bound(9,10), Direction.Next)
         store.update(range, Map(9->90, 10->100)).flatMapOnComplete { tuples =>
           store.get(range).flatMapOnComplete { result =>

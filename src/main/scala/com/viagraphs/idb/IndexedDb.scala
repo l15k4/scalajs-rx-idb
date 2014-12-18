@@ -5,7 +5,6 @@ import monifu.reactive.Observable
 import org.scalajs.dom._
 import upickle.Aliases.{R, W}
 
-import scala.annotation.implicitNotFound
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.{Future, Promise}
 import scala.scalajs.js
