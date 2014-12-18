@@ -15,7 +15,7 @@ object IndexedDbSuite extends TestSuites {
   // even async scheduler is supported, it honors transactions too and it seems to perform better
   implicit val scheduler = Scheduler.trampoline()
 
-  def recreateDB(name: String) = new RecreateDb(name, db => db.createObjectStore(name, lit("autoIncrement" -> true)))
+  def recreateDB(name: String) = new RecreateDb(name, Some(db => db.createObjectStore(name, lit("autoIncrement" -> true))))
 
   val generalUseCases = TestSuite {
 

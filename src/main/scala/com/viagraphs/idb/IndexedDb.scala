@@ -197,16 +197,14 @@ object IndexedDb {
 
       val factory = window.indexedDB
       mode match {
-        case NewDb(dbName, defineObjectStores) =>
-          registerOpenCallbacks(factory.open(dbName), Some(defineObjectStores))
+        case OpenDb(dbName, defineObjectStores) =>
+          registerOpenCallbacks(factory.open(dbName), defineObjectStores)
         case UpgradeDb(dbName, version, defineObjectStores) =>
-          registerOpenCallbacks(factory.open(dbName, version), Some(defineObjectStores))
-        case OpenDb(dbName) =>
-          registerOpenCallbacks(factory.open(dbName), None)
+          registerOpenCallbacks(factory.open(dbName, version), defineObjectStores)
         case RecreateDb(dbName, defineObjectStores) =>
           deleteIfPresent(dbName).onComplete {
             case Success(deleted) =>
-              registerOpenCallbacks(factory.open(dbName), Some(defineObjectStores))
+              registerOpenCallbacks(factory.open(dbName), defineObjectStores)
             case Failure(ex) =>
               observer.onError(ex)
           }(Scheduler.trampoline())

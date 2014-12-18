@@ -27,35 +27,28 @@ package object idb {
     /**
      * create and define object stores, indices, etc.
      */
-    def defineObjectStores: IDBDatabase => Unit
+    val defineObjectStores: Option[IDBDatabase => Unit]
   }
 
   /**
-   * Create new database, use defineObjectStores to define object stores
+   * Create new or open an existing database, use defineObjectStores to define object stores
+   * @param defineObjectStores specify in case database might not exist yet
    */
-  case class NewDb(name: String, defineObjectStores: IDBDatabase => Unit) extends IdbInitMode {
+  case class OpenDb(name: String, defineObjectStores: Option[IDBDatabase => Unit]) extends IdbInitMode {
     def version = ???
   }
 
   /**
    * Delete an existing database of this name and creates new one by defineObjectStores
    */
-  case class RecreateDb(name: String, defineObjectStores: IDBDatabase => Unit) extends IdbInitMode {
+  case class RecreateDb(name: String, defineObjectStores: Some[IDBDatabase => Unit]) extends IdbInitMode {
     def version = ???
   }
 
   /**
    * Upgrades an existing database to a new version. Use defineObjectStores to alter existing store definitions
    */
-  case class UpgradeDb(name: String, version: Int, defineObjectStores: IDBDatabase => Unit) extends IdbInitMode
-
-  /**
-   * Just open an existing database
-   */
-  case class  OpenDb(name: String) extends IdbInitMode {
-    def version: Int = ???
-    def defineObjectStores: (IDBDatabase) => Unit = ???
-  }
+  case class UpgradeDb(name: String, version: Int, defineObjectStores: Some[IDBDatabase => Unit]) extends IdbInitMode
 
   implicit class ObservablePimp[+E](observable: Observable[E]) {
     def foreachWith(delegate: Observer[_])(cb: E => Unit)(msg: E => String): Unit =
