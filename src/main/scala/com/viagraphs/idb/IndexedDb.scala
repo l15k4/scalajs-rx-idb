@@ -172,9 +172,7 @@ object IndexedDb {
 
     val asyncDbObs = Observable.create[IDBDatabase] { observer =>
 
-      /**
-       * IDBFactory.open call doesn't create transaction !
-       */
+      /* IDBFactory.open call doesn't create transaction ! */
       def registerOpenCallbacks(req: IDBOpenDBRequest, upgradeOpt: Option[IDBDatabase => Unit]): Unit = {
         upgradeOpt.foreach { upgrade =>
           req.onupgradeneeded = (ve: IDBVersionChangeEvent) => {
@@ -186,7 +184,7 @@ object IndexedDb {
           observer.onComplete()
         }
         req.onerror = (e: ErrorEvent) => {
-          observer.onError(new IDbRequestException("Openning db connection failed", req.error))
+          observer.onError(new IDbRequestException("Opening db connection failed", req.error))
         }
         req.onblocked = (e: Event) => {
           console.warn("Trying open DB but blocked " + req.error.name)

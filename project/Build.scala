@@ -29,6 +29,7 @@ object Build extends sbt.Build {
           "com.lihaoyi" %%% "upickle" % "0.2.6-SNAPSHOT",
           "com.lihaoyi" %%% "utest" % "0.2.6-SNAPSHOT" % "test"
         ),
+        autoAPIMappings := true,
         requiresDOM := true,
         test in Test := (test in (Test, fastOptStage)).value,
         testOnly  in Test := (testOnly  in(Test, fastOptStage)).evaluated,

@@ -16,7 +16,7 @@ abstract class Index[K : W : R : ValidKey, V : W : R](storeName: String, underly
 
   /**
    * Gets records by keys
-   * @param keys keys of records to get - either [[Iterable]] or [[Key]]
+   * @param keys keys of records to get - either [[scala.collection.Iterable]] or [[com.viagraphs.idb.TypeClasses.Key]]
    * @return observable of key-value pairs
    * @note that values might be undefined if a key doesn't exist !
    */
@@ -94,7 +94,7 @@ class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying: Obse
 
   /**
    * Updates store records matching keys with entries
-   * @param keys keys of records to update - either [[Iterable]] or [[Key]]
+   * @param keys keys of records to update - either [[scala.collection.Iterable]] or [[com.viagraphs.idb.TypeClasses.Key]]
    * @param entries map of key-value pairs to update store with
    * @return observable of the updated key-value pairs (the old values)
    * @note providing both keys and entries[key,value] is necessary due to IDB's cursor internal workings - I was unable to abstract updates better

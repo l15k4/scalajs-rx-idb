@@ -31,20 +31,20 @@ I came to conclusion that IndexedDb is rather a db engine that is meant to be us
 
 **NOTE** 
 
-* It currently depends on scala-js 0.6.0-SNAPSHOT and unaccepted [utest PR](https://github.com/lihaoyi/utest/pull/40)
+* It currently depends on scala-js 0.6.0-SNAPSHOT and unaccepted [utest PR](https://github.com/lihaoyi/utest/pull/40), **thus it has not been released yet.**
   * Before trying, please wait until it depends on scala-js 0.6.0 milestone version otherwise you're gonna spend some time with it !
 * Just the basic operations are tested so far, it's a work in progress
 * The performance might get a little worse in comparison with direct IDB access
   * But after you spend some time with IDB you'll know that loosing a few milliseconds is always better than lock starvation that might put the entire application down or waste hours of troubleshooting
 * This library is suitable for bulk operations rather than requests targeting one record. That's why all methods are passed either Iterable or KeyRange
 
-** Struggles ** 
+**Struggles** 
 
 * There was a significant resistance doing abstracting over a javascript application that itself doesn't even have a common interface for IDBObjectStore and IDBIndex even though both being a Store, sharing common interface
 * I was fighting scalac a lot: 
   * [Scalac type inference sometimes really surprises (unpleasantly)](5) - I had to combine path dependent types with type classes which is always a bad thing (I'll personally never do it again)
   * [Scalac doesn't look into descendants of associated types](6) - which also made my day
-  * [After I rewrote API to path dependent style to spare user from having to explicitly specify types all the time](7) - I found out that I should have probably rewrite the entire application from scratch, 
+  * [After I rewrote API to path dependent style to spare user from having to explicitly specify types all the time](7) - I found out that I should have probably rewritten the entire application from scratch, 
   because all that scalac issues I encountered made it totally overengineered and wrong.
 
 ## Important API - Store
