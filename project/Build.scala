@@ -17,7 +17,12 @@ object Build extends sbt.Build {
         name := "scalajs-rx-idb",
         version := "0.0.6-SNAPSHOT",
         scalaVersion := "2.11.2",
-        scalacOptions ++= Seq("-unchecked", "-feature"),
+        scalacOptions ++= Seq(
+          "-unchecked", "-deprecation", "-feature", "-Xfatal-warnings",
+          "-Xlint", "-Xfuture",
+          "-Yinline-warnings", "-Ywarn-adapted-args", "-Ywarn-inaccessible",
+          "-Ywarn-nullary-override", "-Ywarn-nullary-unit", "-Yno-adapted-args", "-Ywarn-value-discard"
+        ),
         libraryDependencies ++= Seq(
           "org.scala-js" %%% "scalajs-dom" % "0.8.0-SNAPSHOT",
           "org.monifu" %%% "monifu-rx-js" % "0.14.1",

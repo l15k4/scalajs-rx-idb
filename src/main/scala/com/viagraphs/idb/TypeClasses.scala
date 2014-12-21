@@ -14,6 +14,88 @@ import scala.scalajs.js
 import scala.util.control.NonFatal
 import scala.language.higherKinds
 
+class IDbException(msg: String, cause: Throwable) extends Exception(msg, cause)
+case class IDbRequestException(message: String, error: DOMError) extends IDbException(message, new Exception(error.name))
+case class IDbTxException(message: String, error: DOMError) extends IDbException(message, new Exception(error.name))
+
+/**
+ * If multiple "readwrite" transactions are attempting to access the same object store (i.e. if they have overlapping scope),
+ * the transaction that was created first must be the transaction which gets access to the object store first.
+ * Due to the requirements in the previous paragraph, this also means that it is the only transaction which has access to the object store until the transaction is finished.
+ */
+//TODO these constants are typed as java.lang.String in scala-js-dom which throws an error if not implemented by browsers
+sealed trait TxAccess {
+  def value: String
+  def storeNames: Seq[String]
+}
+case class ReadWrite(storeNames: String*) extends TxAccess {
+  val value = "readwrite" /*(IDBTransaction.READ_WRITE : UndefOr[String]).getOrElse("readwrite")*/
+}
+case class ReadOnly(storeNames: String*) extends TxAccess {
+  val value = "readonly" /*(IDBTransaction.READ_ONLY : UndefOr[String]).getOrElse("readonly")*/
+}
+case class VersionChange(storeNames: String*) extends TxAccess {
+  val value = "versionchange" /*(IDBTransaction.VERSION_CHANGE : UndefOr[String]).getOrElse("versionchange")*/
+}
+
+/**
+ * KeyRange might be iterated even descendingly (prev)
+ */
+sealed trait Direction {
+  def value: String
+}
+object Direction {
+  case object Next extends Direction {
+    def value: String = "next"
+  }
+  case object Prev extends Direction {
+    def value: String = "prev"
+  }
+}
+
+/**
+ * Init modes are primarily designed for self explanatory purposes because IndexedDB API is quite ambiguous in this matter
+ *
+ * If db was found, wait until the following conditions are all fulfilled:
+ *    No already existing connections to db, have non-finished "versionchange" transaction.
+ *    If db has its delete pending flag set, wait until db has been deleted.
+ *
+ */
+sealed trait IdbInitMode {
+  def name: String
+
+  /**
+   * @note If the version of db is higher than version, return a DOMError of type VersionError.
+   */
+  def version: Int
+
+  /**
+   * create and define object stores, indices, etc.
+   */
+  val defineObjectStores: Option[IDBDatabase => Unit]
+}
+
+/**
+ * Create new or open an existing database, use defineObjectStores to define object stores
+ * @param defineObjectStores specify in case database might not exist yet
+ */
+case class OpenDb(name: String, defineObjectStores: Option[IDBDatabase => Unit]) extends IdbInitMode {
+  def version = ???
+}
+
+/**
+ * Delete an existing database of this name and creates new one by defineObjectStores
+ */
+case class RecreateDb(name: String, defineObjectStores: Some[IDBDatabase => Unit]) extends IdbInitMode {
+  def version = ???
+}
+
+/**
+ * Upgrades an existing database to a new version. Use defineObjectStores to alter existing store definitions
+ */
+case class UpgradeDb(name: String, version: Int, defineObjectStores: Some[IDBDatabase => Unit]) extends IdbInitMode
+
+
 /**
  * Type Class that puts a view bound on key types. Value types are not restricted much so I don't handle that
  */
@@ -29,10 +111,11 @@ object ValidKey {
   implicit object JsDateOk extends ValidKey[js.Date]
 }
 
-abstract class TypeClasses[K : W : R : ValidKey, V : W : R] {
+abstract class TypeClasses[K : W : R : ValidKey, V : W : R](storeName: String, underlying: Observable[IDBDatabase]) {
 
-  def underlying: Observable[IDBDatabase]
-  def storeName: String
+  abstract class IndexRequest[I, O, C[_]](input: C[I], tx: Tx[C]) extends Request[I, O, C](input, tx) {
+    def executeOnIndex(store: IDBIndex, input: Either[I, Key[I]]): IDBRequest
+  }
 
   /**
    * Request is an observable of Output/results
@@ -120,14 +203,20 @@ abstract class TypeClasses[K : W : R : ValidKey, V : W : R] {
   object Tx {
     implicit def iterable[C[X] <: Iterable[X]]: Tx[C] = new Tx[C] {
       override def execute[I,O](request: Request[I, O, C], tx: IDBTransaction, observer: Observer[O]): Unit = {
-        val store = tx.objectStore(storeName)
+        val target = TypeClasses.this match {
+          case s: Store[K,V] => Left(tx.objectStore(storeName))
+          case i: Index[K,V] => Right(tx.objectStore(storeName).index(i.indexName))
+        }
         def >>(it: Iterator[I]): Unit = {
           if (it.hasNext) {
             val next = it.next()
             try {
-              val req = request.execute(store, Left(next))
+              val req = target match {
+                case Right(index) => request.asInstanceOf[IndexRequest[I,O,C]].executeOnIndex(index, Left(next))
+                case Left(store) => request.execute(store, Left(next))
+              }
               req.onsuccess = (e: Event) => {
-                request.onSuccess(Left(next, req.result), observer).onCompleteNow {
+                request.onSuccess(Left((next, req.result)), observer).onCompleteNow {
                   case Continue.IsSuccess =>
                     >>(it)
                   case _ =>
@@ -158,10 +247,16 @@ abstract class TypeClasses[K : W : R : ValidKey, V : W : R] {
     }
     implicit def range[C[X] <: Key[X]]: Tx[C] = new Tx[C] {
       override def execute[I, O](request: Request[I, O, C], tx: IDBTransaction, observer: Observer[O]): Unit = {
-        val store = tx.objectStore(storeName)
+        val target = TypeClasses.this match {
+          case s: Store[K,V] => Left(tx.objectStore(storeName))
+          case i: Index[K,V] => Right(tx.objectStore(storeName).index(i.indexName))
+        }
         val keyRange = request.input
         try {
-          val req = request.execute(store, Right(keyRange))
+          val req = target match {
+            case Right(index) => request.asInstanceOf[IndexRequest[I,O,C]].executeOnIndex(index, Right(keyRange))
+            case Left(store) => request.execute(store, Right(keyRange))
+          }
           req.onsuccess = (e: Event) => {
             e.target.asInstanceOf[IDBRequest].result match {
               case cursor: IDBCursorWithValue =>
@@ -202,7 +297,7 @@ object TypeClasses {
     }
   )
   implicit class RequestPimp[+E](observable: Observable[E]) {
-    def flatMapOnComplete[U](f: Seq[E] => Observable[U]): Observable[U] = {
+    def onCompleteNewTx[U](f: Seq[E] => Observable[U]): Observable[U] = {
       def emptyYieldingBuffer[T](source: Observable[T], count: Int)(implicit s: Scheduler): Observable[Seq[T]] =
         Observable.create { observer =>
           source.unsafeSubscribe(new Observer[T] {
@@ -231,15 +326,16 @@ object TypeClasses {
             }
 
             def onComplete(): Unit = {
+              // classic buffer emits either non-empty sequence or completes, this buffer emits even empty sequence before complete
               lastAck.onContinueCompleteWith(observer, buffer)
               buffer = null
             }
           })
         }
-      flatMapOnComplete(emptyYieldingBuffer(observable, Integer.MAX_VALUE)(IndexedDb.scheduler).map(f))
+      onCompleteNewTx(emptyYieldingBuffer(observable, Integer.MAX_VALUE)(IndexedDb.scheduler).map(f))
     }
 
-    private def flatMapOnComplete[U, T](source: Observable[T])(implicit ev: T <:< Observable[U]): Observable[U] = {
+    private def onCompleteNewTx[U, T](source: Observable[T])(implicit ev: T <:< Observable[U]): Observable[U] = {
       Observable.create[U] { observerU =>
         source.unsafeSubscribe(new Observer[T] {
           private[this] var childObservable: T = _

@@ -117,7 +117,6 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
           for (i <- 0 until names.length) {
             result += names.item(i)
           }
-          result.toList
         } catch {
           case NonFatal(ex) =>
             observer.onError(new IDbException(errorMsg(db.name), ex))

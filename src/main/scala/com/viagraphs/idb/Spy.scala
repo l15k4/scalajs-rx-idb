@@ -1,7 +1,6 @@
 package com.viagraphs.idb
 
 import monifu.reactive.Observable
-import upickle.Aliases.W
 import scala.language.higherKinds
 import scala.collection.mutable.ListBuffer
 import scala.scalajs.js
@@ -18,7 +17,7 @@ trait Spy[K,V] extends Store[K,V] {
   private def log(name: String, start: Double): Unit = {
     val entry = Entry(name, new js.Date().getTime() - start)
     stats += entry
-    Profiler.totalStats += entry
+    Profiler.totalStats.append(entry)
   }
 
   abstract override def update[C[_]](keys: C[K], entries: Map[K,V])(implicit e: Tx[C]): Observable[(K,V)] = {
@@ -103,7 +102,7 @@ trait Profiler extends IndexedDb {
   private def log(name: String, start: Double): Unit = {
     val entry = Entry(name, new js.Date().getTime() - start)
     stats += entry
-    Profiler.totalStats += entry
+    Profiler.totalStats.append(entry)
   }
 
   abstract override def close(): Observable[String] = {
