@@ -111,7 +111,7 @@ object ValidKey {
   implicit object JsDateOk extends ValidKey[js.Date]
 }
 
-abstract class TypeClasses[K : W : R : ValidKey, V : W : R](storeName: String, underlying: Observable[IDBDatabase]) {
+abstract class IdbSupport[K : W : R : ValidKey, V : W : R](storeName: String, underlying: Observable[IDBDatabase]) {
 
   abstract class IndexRequest[I, O, C[_]](input: C[I], tx: Tx[C]) extends Request[I, O, C](input, tx) {
     def executeOnIndex(store: IDBIndex, input: Either[I, Key[I]]): IDBRequest
@@ -119,8 +119,8 @@ abstract class TypeClasses[K : W : R : ValidKey, V : W : R](storeName: String, u
 
   /**
    * Request is an observable of Output/results
-   * @param input an [[scala.collection.Iterable]] or [[com.viagraphs.idb.TypeClasses.Key]] of keys or values transaction is created over
-   * @param tx transaction strategy for either [[scala.collection.Iterable]] or [[com.viagraphs.idb.TypeClasses.Key]]
+   * @param input an [[scala.collection.Iterable]] or [[com.viagraphs.idb.IdbSupport.Key]] of keys or values transaction is created over
+   * @param tx transaction strategy for either [[scala.collection.Iterable]] or [[com.viagraphs.idb.IdbSupport.Key]]
    */
   abstract class Request[I, O, C[_]](val input: C[I], tx: Tx[C]) extends Observable[O] {
     def txAccess: TxAccess
@@ -137,8 +137,8 @@ abstract class TypeClasses[K : W : R : ValidKey, V : W : R](storeName: String, u
   }
 
   /**
-   * IDB is requested by providing store keys as scala [[scala.collection.Iterable]] or this [[com.viagraphs.idb.TypeClasses.Key]].
-   * As [[scala.collection.Iterable]] is a type constructor, [[com.viagraphs.idb.TypeClasses.Key]] must have become type constructor too to make abstraction over both
+   * IDB is requested by providing store keys as scala [[scala.collection.Iterable]] or this [[com.viagraphs.idb.IdbSupport.Key]].
+   * As [[scala.collection.Iterable]] is a type constructor, [[com.viagraphs.idb.IdbSupport.Key]] must have become type constructor too to make abstraction over both
    */
   sealed trait Key[_] {
     def range: IDBKeyRange
@@ -192,8 +192,8 @@ abstract class TypeClasses[K : W : R : ValidKey, V : W : R](storeName: String, u
   }
 
   /**
-   * Type class representing a transaction strategy over request input that is either [[scala.collection.Iterable]] or [[com.viagraphs.idb.TypeClasses.Key]]
-   * @tparam C either [[scala.collection.Iterable]] or [[com.viagraphs.idb.TypeClasses.Key]] type constructor
+   * Type class representing a transaction strategy over request input that is either [[scala.collection.Iterable]] or [[com.viagraphs.idb.IdbSupport.Key]]
+   * @tparam C either [[scala.collection.Iterable]] or [[com.viagraphs.idb.IdbSupport.Key]] type constructor
    */
   @implicitNotFound("No implicit Tx defined for ${C}, only Key and Iterable types are supported")
   abstract class Tx[C[_]] {
@@ -203,7 +203,7 @@ abstract class TypeClasses[K : W : R : ValidKey, V : W : R](storeName: String, u
   object Tx {
     implicit def iterable[C[X] <: Iterable[X]]: Tx[C] = new Tx[C] {
       override def execute[I,O](request: Request[I, O, C], tx: IDBTransaction, observer: Observer[O]): Unit = {
-        val target = TypeClasses.this match {
+        val target = IdbSupport.this match {
           case s: Store[K,V] => Left(tx.objectStore(storeName))
           case i: Index[K,V] => Right(tx.objectStore(storeName).index(i.indexName))
         }
@@ -247,7 +247,7 @@ abstract class TypeClasses[K : W : R : ValidKey, V : W : R](storeName: String, u
     }
     implicit def range[C[X] <: Key[X]]: Tx[C] = new Tx[C] {
       override def execute[I, O](request: Request[I, O, C], tx: IDBTransaction, observer: Observer[O]): Unit = {
-        val target = TypeClasses.this match {
+        val target = IdbSupport.this match {
           case s: Store[K,V] => Left(tx.objectStore(storeName))
           case i: Index[K,V] => Right(tx.objectStore(storeName).index(i.indexName))
         }
@@ -286,7 +286,7 @@ abstract class TypeClasses[K : W : R : ValidKey, V : W : R](storeName: String, u
   }
 }
 
-object TypeClasses {
+object IdbSupport {
   import scala.collection.immutable.TreeMap
   implicit def TreeMapW[K: W : Ordering, V: W]: W[TreeMap[K, V]] = W[TreeMap[K, V]](
     x => Js.Arr(x.toSeq.map(writeJs[(K, V)]): _*)

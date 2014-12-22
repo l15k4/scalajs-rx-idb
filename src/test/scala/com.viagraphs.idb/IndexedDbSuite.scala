@@ -5,7 +5,7 @@ import org.scalajs.dom.IDBKeyRange
 import upickle._
 import utest._
 import utest.framework.TestSuite
-import TypeClasses._
+import IdbSupport._
 import scala.concurrent.Future
 import scala.scalajs.js.Dynamic.{literal => lit}
 case class AnInstance(a: String, b: Int, c: Map[Int,String])
