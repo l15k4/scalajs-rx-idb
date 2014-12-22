@@ -1,6 +1,7 @@
 package com.viagraphs.idb
 
 import monifu.concurrent.Scheduler
+import monifu.concurrent.atomic.Atomic
 import monifu.reactive.Ack.Continue
 import monifu.reactive.{Ack, Observer, Observable}
 import org.scalajs.dom._
@@ -298,42 +299,82 @@ object IdbSupport {
   )
   implicit class RequestPimp[+E](observable: Observable[E]) {
     def onCompleteNewTx[U](f: Seq[E] => Observable[U]): Observable[U] = {
-      def emptyYieldingBuffer[T](source: Observable[T], count: Int)(implicit s: Scheduler): Observable[Seq[T]] =
-        Observable.create { observer =>
-          source.unsafeSubscribe(new Observer[T] {
-            private[this] var buffer = ArrayBuffer.empty[T]
-            private[this] var lastAck = Continue : Future[Ack]
-            private[this] var size = 0
-
-            def onNext(elem: T): Future[Ack] = {
-              size += 1
-              buffer.append(elem)
-              if (size >= count) {
-                val oldBuffer = buffer
-                buffer = ArrayBuffer.empty[T]
-                size = 0
-
-                lastAck = observer.onNext(oldBuffer)
-                lastAck
-              }
-              else
-                Continue
-            }
-
-            def onError(ex: Throwable): Unit = {
-              observer.onError(ex)
-              buffer = null
-            }
-
-            def onComplete(): Unit = {
-              // classic buffer emits either non-empty sequence or completes, this buffer emits even empty sequence before complete
-              lastAck.onContinueCompleteWith(observer, buffer)
-              buffer = null
-            }
-          })
-        }
       onCompleteNewTx(emptyYieldingBuffer(observable, Integer.MAX_VALUE)(IndexedDb.scheduler).map(f))
     }
+
+    def doWorkOnSuccess(f: Seq[E] => Unit)(implicit s: Scheduler): Observable[E] =
+      Observable.create { observer =>
+        observable.unsafeSubscribe(new Observer[E] {
+          private[this] var buffer = ArrayBuffer.empty[E]
+          private[this] val wasExecuted = Atomic(false)
+
+          private[this] def execute(): Unit = {
+            if (wasExecuted.compareAndSet(expect=false, update=true))
+              try f(buffer) catch {
+                case NonFatal(ex) =>
+                  s.reportFailure(ex)
+              } finally {
+                buffer = null
+              }
+          }
+
+          def onNext(elem: E): Future[Ack] = {
+            buffer.append(elem)
+            val f = observer.onNext(elem)
+            f.onCancel(execute())
+            f
+          }
+
+          def onError(ex: Throwable): Unit = {
+            observer.onError(ex)
+            buffer = null
+          }
+
+          def onComplete(): Unit = {
+            try observer.onComplete() finally {
+              s.scheduleOnce {
+                execute()
+              }
+              ()
+            }
+          }
+        })
+      }
+
+    private def emptyYieldingBuffer[T](source: Observable[T], count: Int)(implicit s: Scheduler): Observable[Seq[T]] =
+      Observable.create { observer =>
+        source.unsafeSubscribe(new Observer[T] {
+          private[this] var buffer = ArrayBuffer.empty[T]
+          private[this] var lastAck = Continue : Future[Ack]
+          private[this] var size = 0
+
+          def onNext(elem: T): Future[Ack] = {
+            size += 1
+            buffer.append(elem)
+            if (size >= count) {
+              val oldBuffer = buffer
+              buffer = ArrayBuffer.empty[T]
+              size = 0
+
+              lastAck = observer.onNext(oldBuffer)
+              lastAck
+            }
+            else
+              Continue
+          }
+
+          def onError(ex: Throwable): Unit = {
+            observer.onError(ex)
+            buffer = null
+          }
+
+          def onComplete(): Unit = {
+            // classic buffer emits either non-empty sequence or completes, this buffer emits even empty sequence before complete
+            lastAck.onContinueCompleteWith(observer, buffer)
+            buffer = null
+          }
+        })
+      }
 
     private def onCompleteNewTx[U, T](source: Observable[T])(implicit ev: T <:< Observable[U]): Observable[U] = {
       Observable.create[U] { observerU =>

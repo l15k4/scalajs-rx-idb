@@ -1,6 +1,7 @@
 package com.viagraphs.idb
 
 import monifu.concurrent.Scheduler
+import monifu.reactive.Observable
 import org.scalajs.dom.IDBKeyRange
 import upickle._
 import utest._
@@ -24,6 +25,61 @@ object IndexedDbSuite extends TestSuites {
   )
 
   val generalUseCases = TestSuite {
+
+    "doWorkOnSuccess" - {
+      var completed = false
+      Observable.from(List(1,2,3)).doWorkOnSuccess { result =>
+        assert(completed)
+        assert(result == List(1)) // asFuture cancels after the first one
+      }.doOnComplete {
+        completed = true
+      }.asFuture
+    }
+
+    "onCompleteNewTx" - {
+      var completed = false
+      Observable.from(List(1,2,3)).onCompleteNewTx { result =>
+        assert(result == List(1,2,3)) // this proves that before Observable.empty co
+        assert(completed)
+        Observable.empty.doOnStart { nothing =>
+          assert(completed)
+        }
+      }.doOnComplete {
+        completed = true
+      }.asFuture
+    }
+
+    "get-db-names" - {
+      val idb = IndexedDb(recreateDB("get-db-names"))
+      idb.underlying.asFuture.flatMap { db =>
+        IndexedDb.getDatabaseNames.map { names =>
+          assert(names.contains("get-db-names"))
+          idb.close().map { name =>
+            (
+              name,
+              (0 until names.length).foldLeft(List[String]()) { case (acc, i) => names(i) :: acc}
+              )
+          }
+        }
+      }
+    }
+
+    "delete-db-if-present" - {
+      val dbName = "delete-db-if-present"
+      IndexedDb(recreateDB(dbName)).close().asFuture.flatMap {
+        case Some(closedDbName) =>
+          IndexedDb.deleteIfPresent(closedDbName).flatMap { deleted =>
+            assert(deleted)
+            IndexedDb.getDatabaseNames.map { names =>
+              val deleted = !names.contains(closedDbName)
+              assert(deleted)
+              deleted
+            }
+          }
+        case _ =>
+          Future.failed(new Exception("deleteIfPresent should certainly return something!"))
+      }
+    }
 
     "get-by-index-using-iterable" - {
       val dbName = "get-by-index-using-iterable"
@@ -54,33 +110,6 @@ object IndexedDbSuite extends TestSuites {
         }
       }.asFuture
     }
-    "get-db-names" - {
-      val idb = IndexedDb(recreateDB("get-db-names"))
-      idb.underlying.asFuture.flatMap { db =>
-        IndexedDb.getDatabaseNames.map { names =>
-          assert(names.contains("get-db-names"))
-          idb.close()
-          (0 until names.length).foldLeft(List[String]()) { case (acc, i) => names(i) :: acc}
-        }
-      }
-    }
-
-    "delete-db-if-present" - {
-      val dbName = "delete-db-if-present"
-      IndexedDb(recreateDB(dbName)).close().asFuture.flatMap {
-        case Some(closedDbName) =>
-          IndexedDb.deleteIfPresent(closedDbName).flatMap { deleted =>
-            assert(deleted)
-            IndexedDb.getDatabaseNames.map { names =>
-              val deleted = !names.contains(closedDbName)
-              assert(deleted)
-              deleted
-            }
-          }
-        case _ =>
-          Future.failed(new Exception("deleteIfPresent should certainly return something!"))
-      }
-    }
 
     "append-and-get-object" - {
       val dbName = "append-and-get-object"
@@ -106,7 +135,7 @@ object IndexedDbSuite extends TestSuites {
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int,String](dbName)
       val str = "bl bla bla"
-      store.add(List(str)).onCompleteNewTx { appendTuples: Seq[(Int,String)] =>
+      store.add(List(str)).onCompleteNewTx { appendTuples =>
         assert(appendTuples.length == 1)
         val key = appendTuples(0)._1
         store.get(List(key)).onCompleteNewTx { getTuples =>
