@@ -1,5 +1,6 @@
 package com.viagraphs.idb
 
+import monifu.concurrent.atomic.Atomic
 import monifu.reactive.Ack.{Cancel, Continue}
 import monifu.reactive.{Ack, Observable, Observer}
 import org.scalajs.dom._
@@ -11,7 +12,7 @@ import scala.language.higherKinds
 import scala.scalajs.js
 import scala.scalajs.js.UndefOr
 
-abstract class Index[K : W : R : ValidKey, V : W : R](storeName: String, underlying: Observable[IDBDatabase]) extends IdbSupport[K,V](storeName, underlying) {
+abstract class Index[K : W : R : ValidKey, V : W : R](storeName: String, underlying: Atomic[Observable[IDBDatabase]]) extends IdbSupport[K,V](storeName, underlying) {
   def indexName: String
 
   /**
@@ -57,7 +58,7 @@ abstract class Index[K : W : R : ValidKey, V : W : R](storeName: String, underly
   }
 }
 
-class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying: Observable[IDBDatabase]) extends Index[K,V](storeName, underlying) {
+class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying: Atomic[Observable[IDBDatabase]]) extends Index[K,V](storeName, underlying) {
 
   def index[IK : W : R : ValidKey](name: String) = new Index[IK, V](storeName, underlying) {
     def indexName: String = name
@@ -216,7 +217,7 @@ class Store[K : W : R : ValidKey, V : W : R](storeName: String, underlying: Obse
   import scala.scalajs.js.JSConverters._
   private[this] def openTx(txAccess: TxAccess): Observable[IDBTransaction] =
     Observable.create { observer =>
-      underlying.foreachWith(observer) { db =>
+      underlying.get.foreachWith(observer) { db =>
         val tx = db.transaction(txAccess.storeNames.toJSArray, txAccess.value)
         observer.onNext(tx)
         observer.onComplete()

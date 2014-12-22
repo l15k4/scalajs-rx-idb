@@ -1,6 +1,7 @@
 package com.viagraphs.idb
 
 import monifu.concurrent.Scheduler
+import monifu.concurrent.atomic.{AtomicAny, Atomic}
 import monifu.reactive.Observable
 import org.scalajs.dom._
 import upickle.Aliases.{R, W}
@@ -45,7 +46,7 @@ import scala.util.{Failure, Success}
  *        - ??? does creating a new one implicitly commits the previous tx?  If not, serious write lock starvations might occur, right ???
  *
  */
-class IndexedDb private(val underlying: Observable[IDBDatabase]) {
+class IndexedDb private(val underlying: Atomic[Observable[IDBDatabase]]) {
 
   /**
    *
@@ -61,7 +62,7 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
    */
   def getName: Observable[String] =
     Observable.create { observer =>
-      underlying.foreachWith(observer) { db =>
+      underlying.get.foreachWith(observer) { db =>
         observer.onNext(db.name)
         observer.onComplete()
       }(db => s"Unable to get database name")
@@ -74,7 +75,7 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
    */
   def close(): Observable[String] = {
     Observable.create { observer =>
-      underlying.foreachWith(observer) { db =>
+      underlying.get.foreachWith(observer) { db =>
         val dbName = db.name
         db.close()
         observer.onNext(dbName)
@@ -110,7 +111,7 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
   def getStoreNames: Observable[List[String]] = {
     def errorMsg(arg: String) = s"Unable to get storeNames of $arg"
     Observable.create { observer =>
-      underlying.foreachWith(observer) { db =>
+      underlying.get.foreachWith(observer) { db =>
         try {
           val names = db.objectStoreNames
           val result = ListBuffer[String]()
@@ -123,6 +124,10 @@ class IndexedDb private(val underlying: Observable[IDBDatabase]) {
         }
       }(db => errorMsg(db.name))
     }
+  }
+
+  def upgrade(mode: UpgradeDb): Unit = {
+    underlying.set(IndexedDb.init(mode))
   }
 }
 
@@ -165,11 +170,7 @@ object IndexedDb {
     }
   }
 
-  /**
-   * @note The IDBDatabase interface represents a connection to a database, there might be multiple connections within one origin
-   */
-  def apply(mode: IdbInitMode): IndexedDb = {
-
+  private def init(mode: IdbInitMode): Observable[IDBDatabase] = {
     val asyncDbObs = Observable.create[IDBDatabase] { observer =>
 
       /* IDBFactory.open call doesn't create transaction ! */
@@ -208,14 +209,21 @@ object IndexedDb {
       }
     }.publishLast()
     asyncDbObs.connect()
+    asyncDbObs
+  }
 
+  /**
+   * @note The IDBDatabase interface represents a connection to a database, there might be multiple connections within one origin
+   */
+  def apply(mode: IdbInitMode): IndexedDb = {
+    val asyncDbObs = init(mode)
     mode match {
       case m: Profiling =>
-        new IndexedDb(asyncDbObs) with Profiler
+        new IndexedDb(AtomicAny(asyncDbObs)) with Profiler
       case m: Logging =>
-        new IndexedDb(asyncDbObs) with Logger
+        new IndexedDb(AtomicAny(asyncDbObs)) with Logger
       case _ =>
-        new IndexedDb(asyncDbObs)
+        new IndexedDb(AtomicAny(asyncDbObs))
     }
 
   }

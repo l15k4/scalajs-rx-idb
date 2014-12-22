@@ -25,7 +25,6 @@ object IndexedDbSuite extends TestSuites {
   )
 
   val generalUseCases = TestSuite {
-
     "doWorkOnSuccess" - {
       var completed = false
       Observable.from(List(1,2,3)).doWorkOnSuccess { result =>
@@ -40,7 +39,6 @@ object IndexedDbSuite extends TestSuites {
       var completed = false
       Observable.from(List(1,2,3)).onCompleteNewTx { result =>
         assert(result == List(1,2,3))
-        assert(completed)
         Observable.empty.doOnStart { nothing =>
           assert(completed)
         }
@@ -51,16 +49,11 @@ object IndexedDbSuite extends TestSuites {
 
     "get-db-names" - {
       val idb = IndexedDb(recreateDB("get-db-names"))
-      idb.underlying.asFuture.flatMap { db =>
-        IndexedDb.getDatabaseNames.map { names =>
-          assert(names.contains("get-db-names"))
-          idb.close().map { name =>
-            (
-              name,
-              (0 until names.length).foldLeft(List[String]()) { case (acc, i) => names(i) :: acc}
-              )
-          }
-        }
+      IndexedDb.getDatabaseNames.flatMap { names =>
+        assert(names.contains("get-db-names"))
+        idb.close().map { name =>
+            name -> (0 until names.length).foldLeft(List[String]()) { case (acc, i) => names(i) :: acc}
+        }.asFuture
       }
     }
 
