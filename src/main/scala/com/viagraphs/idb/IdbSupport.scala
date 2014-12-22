@@ -73,28 +73,28 @@ sealed trait IdbInitMode {
   /**
    * create and define object stores, indices, etc.
    */
-  val defineObjectStores: Option[IDBDatabase => Unit]
+  val defineObjectStores: Option[(IDBDatabase, IDBVersionChangeEvent) => Unit]
 }
 
 /**
  * Create new or open an existing database, use defineObjectStores to define object stores
  * @param defineObjectStores specify in case database might not exist yet
  */
-case class OpenDb(name: String, defineObjectStores: Option[IDBDatabase => Unit]) extends IdbInitMode {
+case class OpenDb(name: String, defineObjectStores: Option[(IDBDatabase, IDBVersionChangeEvent) => Unit]) extends IdbInitMode {
   def version = ???
 }
 
 /**
  * Delete an existing database of this name and creates new one by defineObjectStores
  */
-case class RecreateDb(name: String, defineObjectStores: Some[IDBDatabase => Unit]) extends IdbInitMode {
+case class RecreateDb(name: String, defineObjectStores: Some[(IDBDatabase, IDBVersionChangeEvent) => Unit]) extends IdbInitMode {
   def version = ???
 }
 
 /**
  * Upgrades an existing database to a new version. Use defineObjectStores to alter existing store definitions
  */
-case class UpgradeDb(name: String, version: Int, defineObjectStores: Some[IDBDatabase => Unit]) extends IdbInitMode
+case class UpgradeDb(name: String, version: Int, defineObjectStores: Some[(IDBDatabase, IDBVersionChangeEvent) => Unit]) extends IdbInitMode
 
 
 /**

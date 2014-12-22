@@ -17,7 +17,7 @@ object IndexedDbSuite extends TestSuites {
   implicit val scheduler = Scheduler.trampoline()
 
   def recreateDB(name: String) =
-    new RecreateDb(name, Some { db =>
+    new RecreateDb(name, Some { (db, e) =>
       val store = db.createObjectStore(name, lit("autoIncrement" -> true))
       store.createIndex("testIndex", "a")
       ()
@@ -39,7 +39,7 @@ object IndexedDbSuite extends TestSuites {
     "onCompleteNewTx" - {
       var completed = false
       Observable.from(List(1,2,3)).onCompleteNewTx { result =>
-        assert(result == List(1,2,3)) // this proves that before Observable.empty co
+        assert(result == List(1,2,3))
         assert(completed)
         Observable.empty.doOnStart { nothing =>
           assert(completed)

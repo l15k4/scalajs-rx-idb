@@ -173,10 +173,11 @@ object IndexedDb {
     val asyncDbObs = Observable.create[IDBDatabase] { observer =>
 
       /* IDBFactory.open call doesn't create transaction ! */
-      def registerOpenCallbacks(req: IDBOpenDBRequest, upgradeOpt: Option[IDBDatabase => Unit]): Unit = {
+      def registerOpenCallbacks(req: IDBOpenDBRequest, upgradeOpt: Option[(IDBDatabase, IDBVersionChangeEvent) => Unit]): Unit = {
         upgradeOpt.foreach { upgrade =>
           req.onupgradeneeded = (ve: IDBVersionChangeEvent) => {
-            upgrade(ve.target.asInstanceOf[IDBOpenDBRequest].result.asInstanceOf[IDBDatabase])
+            val db = ve.target.asInstanceOf[IDBOpenDBRequest].result.asInstanceOf[IDBDatabase]
+            upgrade(db, ve)
           }
         }
         req.onsuccess = (e: Event) => {
