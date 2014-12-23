@@ -21,7 +21,7 @@ object Build extends sbt.Build {
           "-unchecked", "-deprecation", "-feature", "-Xfatal-warnings",
           "-Xlint", "-Xfuture",
           "-Yinline-warnings", "-Ywarn-adapted-args", "-Ywarn-inaccessible",
-          "-Ywarn-nullary-override", "-Ywarn-nullary-unit", "-Yno-adapted-args", "-Ywarn-value-discard"
+          "-Ywarn-nullary-override", "-Ywarn-nullary-unit", "-Yno-adapted-args"
         ),
         libraryDependencies ++= Seq(
           "org.scala-js" %%% "scalajs-dom" % "0.8.0-SNAPSHOT",

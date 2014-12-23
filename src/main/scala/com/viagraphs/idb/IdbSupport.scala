@@ -10,7 +10,7 @@ import upickle._
 import monifu.reactive.internals.FutureAckExtensions
 import scala.annotation.implicitNotFound
 import scala.collection.mutable.ArrayBuffer
-import scala.concurrent.Future
+import scala.concurrent.{Promise, Future}
 import scala.scalajs.js
 import scala.util.control.NonFatal
 import scala.language.higherKinds
@@ -298,6 +298,23 @@ object IdbSupport {
     }
   )
   implicit class RequestPimp[+E](observable: Observable[E]) {
+
+    def asCompletedFuture(implicit s: Scheduler): Future[Ack] = {
+      val promise = Promise[Ack]()
+      observable.unsafeSubscribe(new Observer[E] {
+        def onNext(elem: E) = {
+          Continue
+        }
+        def onComplete() = {
+          promise.trySuccess(Continue)
+        }
+        def onError(ex: Throwable) = {
+          promise.tryFailure(ex)
+        }
+      })
+      promise.future
+    }
+
     def onCompleteNewTx[U](f: Seq[E] => Observable[U]): Observable[U] = {
       onCompleteNewTx(emptyYieldingBuffer(observable, Integer.MAX_VALUE)(IndexedDb.scheduler).map(f))
     }
