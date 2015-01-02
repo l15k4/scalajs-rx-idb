@@ -46,7 +46,7 @@ import scala.util.{Failure, Success}
  *        - ??? does creating a new one implicitly commits the previous tx?  If not, serious write lock starvations might occur, right ???
  *
  */
-class IndexedDb private(val underlying: Atomic[Observable[IDBDatabase]]) {
+class IndexedDb private(val dbRef: Atomic[Observable[IDBDatabase]]) {
 
   /**
    *
@@ -55,14 +55,14 @@ class IndexedDb private(val underlying: Atomic[Observable[IDBDatabase]]) {
    * @tparam V type of store values, it must have uPickle's Reader and Writer evidence
    * @return Store that requests are initiated from
    */
-  def openStore[K : W : R : ValidKey, V : W : R](name: String) = new Store[K, V](name, underlying)
+  def openStore[K : W : R : ValidKey, V : W : R](name: String) = new Store[K, V](name, dbRef)
 
   /**
    * @return observable of name of this database
    */
   def getName: Observable[String] =
     Observable.create { observer =>
-      underlying.get.foreachWith(observer) { db =>
+      dbRef.get.foreachWith(observer) { db =>
         observer.onNext(db.name)
         observer.onComplete()
       }(db => s"Unable to get database name")
@@ -75,7 +75,7 @@ class IndexedDb private(val underlying: Atomic[Observable[IDBDatabase]]) {
    */
   def close(): Observable[String] = {
     Observable.create { observer =>
-      underlying.get.foreachWith(observer) { db =>
+      dbRef.get.foreachWith(observer) { db =>
         val dbName = db.name
         db.close()
         observer.onNext(dbName)
@@ -111,7 +111,7 @@ class IndexedDb private(val underlying: Atomic[Observable[IDBDatabase]]) {
   def getStoreNames: Observable[List[String]] = {
     def errorMsg(arg: String) = s"Unable to get storeNames of $arg"
     Observable.create { observer =>
-      underlying.get.foreachWith(observer) { db =>
+      dbRef.get.foreachWith(observer) { db =>
         try {
           val names = db.objectStoreNames
           val result = ListBuffer[String]()
@@ -127,7 +127,7 @@ class IndexedDb private(val underlying: Atomic[Observable[IDBDatabase]]) {
   }
 
   def upgrade(mode: UpgradeDb): Unit = {
-    underlying.set(IndexedDb.init(mode))
+    dbRef.set(IndexedDb.init(mode))
   }
 }
 

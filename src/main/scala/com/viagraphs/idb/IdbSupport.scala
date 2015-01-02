@@ -115,7 +115,7 @@ object ValidKey {
   implicit object JsDateOk extends ValidKey[js.Date]
 }
 
-abstract class IdbSupport[K : W : R : ValidKey, V : W : R](storeName: String, underlying: Atomic[Observable[IDBDatabase]]) {
+abstract class IdbSupport[K : W : R : ValidKey, V : W : R](var storeName: String, dbRef: Atomic[Observable[IDBDatabase]]) {
 
   abstract class IndexRequest[I, O, C[_]](input: C[I], tx: Tx[C]) extends Request[I, O, C](input, tx) {
     def executeOnIndex(store: IDBIndex, input: Either[I, Key[I]]): IDBRequest
@@ -133,7 +133,7 @@ abstract class IdbSupport[K : W : R : ValidKey, V : W : R](storeName: String, un
     def onError(input: Option[I] = None): String
     def subscribeFn(observer: Observer[O]): Unit = {
       import scala.scalajs.js.JSConverters._
-      underlying.get.foreachWith(observer) { db =>
+      dbRef.get.foreachWith(observer) { db =>
         val transaction = db.transaction(txAccess.storeNames.toJSArray, txAccess.value)
         tx.execute[I, O](this, transaction, observer)
       }(db => s"Unable to open transaction for request $this")
