@@ -11,8 +11,7 @@ import scala.concurrent.Future
 import scala.scalajs.js.Dynamic.{literal => lit}
 case class AnInstance(a: String, b: Int, c: Map[Int,String])
 
-object IndexedDbSuite extends TestSuites {
-
+object IndexedDbSuite extends TestSuite {
   // even async scheduler is supported, it honors transactions too and it seems to perform better
   implicit val scheduler = Scheduler.trampoline()
 
@@ -23,11 +22,12 @@ object IndexedDbSuite extends TestSuites {
       ()
     }
   )
+  // TODO onComplete Profiler.printout()
 
-  val generalUseCases = TestSuite {
+  def tests = TestSuite {
     "doWorkOnSuccess" - {
       var completed = false
-      Observable.from(List(1,2,3)).doWorkOnSuccess { result =>
+      Observable.fromIterable(List(1,2,3)).doWorkOnSuccess { result =>
         assert(completed)
         assert(result == List(1)) // asFuture cancels after the first one
       }.doOnComplete {
@@ -37,7 +37,7 @@ object IndexedDbSuite extends TestSuites {
 
     "onCompleteNewTx" - {
       var completed = false
-      Observable.from(List(1,2,3)).onCompleteNewTx { result =>
+      Observable.fromIterable(List(1,2,3)).onCompleteNewTx { result =>
         assert(result == List(1,2,3))
         Observable.empty.doOnStart { nothing =>
           assert(completed)
