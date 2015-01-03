@@ -47,7 +47,7 @@ import scala.util.{Failure, Success}
  *
  */
 class IndexedDb private(val dbRef: Atomic[Observable[IDBDatabase]]) {
-
+  implicit val scheduler = IndexedDb.scheduler
   /**
    *
    * @param name object store name
@@ -61,7 +61,8 @@ class IndexedDb private(val dbRef: Atomic[Observable[IDBDatabase]]) {
    * @return observable of name of this database
    */
   def getName: Observable[String] =
-    Observable.create { observer =>
+    Observable.create { subscriber =>
+      val observer = subscriber.observer
       dbRef.get.foreachWith(observer) { db =>
         observer.onNext(db.name)
         observer.onComplete()
@@ -74,7 +75,8 @@ class IndexedDb private(val dbRef: Atomic[Observable[IDBDatabase]]) {
    * Waits for all transactions created using connection to complete. Once they are complete, connection is closed.
    */
   def close(): Observable[String] = {
-    Observable.create { observer =>
+    Observable.create { subscriber =>
+      val observer = subscriber.observer
       dbRef.get.foreachWith(observer) { db =>
         val dbName = db.name
         db.close()
@@ -91,7 +93,8 @@ class IndexedDb private(val dbRef: Atomic[Observable[IDBDatabase]]) {
    */
   def delete(): Observable[String] = {
     def errorMsg(arg: String) = s"Deleting database $arg failed"
-    Observable.create { observer =>
+    Observable.create { subscriber =>
+      val observer = subscriber.observer
       close().foreachWith(observer) { dbName =>
         val delReq = window.indexedDB.deleteDatabase(dbName)
         delReq.onsuccess = (e: Event) => {
@@ -110,7 +113,8 @@ class IndexedDb private(val dbRef: Atomic[Observable[IDBDatabase]]) {
    */
   def getStoreNames: Observable[List[String]] = {
     def errorMsg(arg: String) = s"Unable to get storeNames of $arg"
-    Observable.create { observer =>
+    Observable.create { subscriber =>
+      val observer = subscriber.observer
       dbRef.get.foreachWith(observer) { db =>
         try {
           val names = db.objectStoreNames
@@ -171,7 +175,8 @@ object IndexedDb {
   }
 
   private def init(mode: IdbInitMode): Observable[IDBDatabase] = {
-    val asyncDbObs = Observable.create[IDBDatabase] { observer =>
+    val asyncDbObs = Observable.create[IDBDatabase] { subscriber =>
+      val observer = subscriber.observer
 
       /* IDBFactory.open call doesn't create transaction ! */
       def registerOpenCallbacks(req: IDBOpenDBRequest, upgradeOpt: Option[(IDBDatabase, IDBVersionChangeEvent) => Unit]): Unit = {
@@ -205,10 +210,10 @@ object IndexedDb {
               registerOpenCallbacks(factory.open(dbName), defineObjectStores)
             case Failure(ex) =>
               observer.onError(ex)
-          }(Scheduler.trampoline())
+          }
       }
     }.publishLast()
-    asyncDbObs.connect()
+    asyncDbObs.connect
     asyncDbObs
   }
 

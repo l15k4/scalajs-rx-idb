@@ -68,7 +68,6 @@ trait Spy[K,V] extends Store[K,V] {
  */
 trait Logging
 trait Logger extends IndexedDb {
-  implicit val scheduler = IndexedDb.scheduler
 
   abstract override def close(): Observable[String] = {
     super.close().dump("close")
@@ -95,7 +94,6 @@ case class EntrySum(invocationCount: Int, executionTime: Double)
  */
 trait Profiling
 trait Profiler extends IndexedDb {
-  implicit val scheduler = IndexedDb.scheduler
   val stats = ListBuffer[Entry]()
 
   private def now = new js.Date().getTime()

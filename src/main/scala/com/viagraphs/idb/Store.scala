@@ -181,7 +181,8 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
    */
   def count: Observable[Int] = {
     def errorMsg = s"Database.count($storeName) failed"
-    Observable.create { observer =>
+    Observable.create { subscriber =>
+      val observer = subscriber.observer
       openTx(ReadOnly(storeName)).foreachWith(observer) { tx =>
         val req = tx.objectStore(storeName).count()
         req.onsuccess = (e: Event) => {
@@ -191,7 +192,7 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
         req.onerror = (e: ErrorEvent) => {
           observer.onError(new IDbRequestException(errorMsg, req.error))
         }
-      }(storeTx => errorMsg)
+      }(storeTx => errorMsg)(IndexedDb.scheduler)
     }
   }
 
@@ -200,7 +201,8 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
    */
   def clear: Observable[Nothing] = {
     def errorMsg = s"Database.clear($storeName) failed"
-    Observable.create { observer =>
+    Observable.create { subscriber =>
+      val observer = subscriber.observer
       openTx(ReadWrite(storeName)).foreachWith(observer) { tx =>
         tx.objectStore(storeName).clear()
         tx.oncomplete = (e: Event) => {
@@ -209,18 +211,19 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
         tx.onerror = (e: ErrorEvent) => {
           observer.onError(new IDbRequestException(errorMsg, tx.error))
         }
-      }(storeTx => errorMsg)
+      }(storeTx => errorMsg)(IndexedDb.scheduler)
     }
   }
 
   def indexName: String = ???
   import scala.scalajs.js.JSConverters._
   private[this] def openTx(txAccess: TxAccess): Observable[IDBTransaction] =
-    Observable.create { observer =>
+    Observable.create { subscriber =>
+      val observer = subscriber.observer
       dbRef.get.foreachWith(observer) { db =>
         val tx = db.transaction(txAccess.storeNames.toJSArray, txAccess.value)
         observer.onNext(tx)
         observer.onComplete()
-      }(db => s"Unable to openStoreTx $name in db ${db.name}")
+      }(db => s"Unable to openStoreTx $name in db ${db.name}")(IndexedDb.scheduler)
     }
 }

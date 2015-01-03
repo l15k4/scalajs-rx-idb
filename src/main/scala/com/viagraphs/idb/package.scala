@@ -1,5 +1,6 @@
 package com.viagraphs
 
+import monifu.concurrent.Scheduler
 import monifu.reactive.Ack.{Cancel, Continue}
 import monifu.reactive.{Observable, Observer}
 
@@ -8,7 +9,7 @@ import scala.util.control.NonFatal
 package object idb {
 
   implicit class ObservablePimp[+E](observable: Observable[E]) {
-    def foreachWith(delegate: Observer[_])(cb: E => Unit)(msg: E => String): Unit =
+    def foreachWith(delegate: Observer[_])(cb: E => Unit)(msg: E => String)(implicit s: Scheduler): Unit =
       observable.unsafeSubscribe(
         new Observer[E] {
           def onNext(elem: E) =
@@ -16,7 +17,7 @@ package object idb {
               cb(elem); Continue
             } catch {
               case NonFatal(ex) =>
-                onError(ex, elem)
+                delegateError(ex, elem)
                 Cancel
             }
 
@@ -24,7 +25,7 @@ package object idb {
 
           def onError(ex: Throwable) = ???
 
-          def onError(ex: Throwable, elem: E) = {
+          private def delegateError(ex: Throwable, elem: E) = {
             delegate.onError(new IDbException(msg(elem), ex))
           }
         }

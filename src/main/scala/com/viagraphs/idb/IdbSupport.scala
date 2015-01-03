@@ -3,7 +3,7 @@ package com.viagraphs.idb
 import monifu.concurrent.Scheduler
 import monifu.concurrent.atomic.Atomic
 import monifu.reactive.Ack.Continue
-import monifu.reactive.{Ack, Observer, Observable}
+import monifu.reactive.{Subscriber, Ack, Observer, Observable}
 import org.scalajs.dom._
 import upickle.Aliases._
 import upickle._
@@ -131,12 +131,13 @@ abstract class IdbSupport[K : W : R : ValidKey, V : W : R](var storeName: String
     def execute(store: IDBObjectStore, input: Either[I, Key[I]]): IDBRequest
     def onSuccess(result: Either[(I, Any), IDBCursorWithValue], observer: Observer[O]): Future[Ack]
     def onError(input: Option[I] = None): String
-    def subscribeFn(observer: Observer[O]): Unit = {
+    def subscribeFn(subscriber: Subscriber[O]): Unit = {
+      val observer = subscriber.observer
       import scala.scalajs.js.JSConverters._
       dbRef.get.foreachWith(observer) { db =>
         val transaction = db.transaction(txAccess.storeNames.toJSArray, txAccess.value)
         tx.execute[I, O](this, transaction, observer)
-      }(db => s"Unable to open transaction for request $this")
+      }(db => s"Unable to open transaction for request $this")(IndexedDb.scheduler)
     }
   }
 
@@ -318,12 +319,13 @@ object IdbSupport {
       promise.future
     }
 
-    def onCompleteNewTx[U](f: Seq[E] => Observable[U]): Observable[U] = {
+    def onCompleteNewTx[U](f: Seq[E] => Observable[U])(implicit s: Scheduler): Observable[U] = {
       onCompleteNewTx(emptyYieldingBuffer(observable, Integer.MAX_VALUE)(IndexedDb.scheduler).map(f))
     }
 
     def doWorkOnSuccess(f: Seq[E] => Unit)(implicit s: Scheduler): Observable[E] =
-      Observable.create { observer =>
+      Observable.create { subscriber =>
+        val observer = subscriber.observer
         observable.unsafeSubscribe(new Observer[E] {
           private[this] var buffer = ArrayBuffer.empty[E]
           private[this] val wasExecuted = Atomic(false)
@@ -362,7 +364,8 @@ object IdbSupport {
       }
 
     private def emptyYieldingBuffer[T](source: Observable[T], count: Int)(implicit s: Scheduler): Observable[Seq[T]] =
-      Observable.create { observer =>
+      Observable.create { subscriber =>
+        val observer = subscriber.observer
         source.unsafeSubscribe(new Observer[T] {
           private[this] var buffer = ArrayBuffer.empty[T]
           private[this] var lastAck = Continue : Future[Ack]
@@ -396,8 +399,9 @@ object IdbSupport {
         })
       }
 
-    private def onCompleteNewTx[U, T](source: Observable[T])(implicit ev: T <:< Observable[U]): Observable[U] = {
-      Observable.create[U] { observerU =>
+    private def onCompleteNewTx[U, T](source: Observable[T])(implicit ev: T <:< Observable[U], s: Scheduler): Observable[U] = {
+      Observable.create[U] { subscriber =>
+        val observerU = subscriber.observer
         source.unsafeSubscribe(new Observer[T] {
           private[this] var childObservable: T = _
 
