@@ -1,6 +1,5 @@
 import org.scalajs.sbtplugin.ScalaJSPlugin
 import org.scalajs.sbtplugin.ScalaJSPlugin.autoImport._
-import org.scalajs.sbtplugin.ScalaJSPlugin.AutoImport.PhantomJSEnv
 import sbt.Keys._
 import sbt._
 

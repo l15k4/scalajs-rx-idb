@@ -1,5 +1,6 @@
 package com.viagraphs.idb
 
+import com.viagraphs.idb.IdbSupport.RequestPimp
 import monifu.concurrent.Scheduler
 import monifu.concurrent.atomic.{AtomicAny, Atomic}
 import monifu.reactive.Observable
@@ -130,8 +131,13 @@ class IndexedDb private(val dbRef: Atomic[Observable[IDBDatabase]]) {
     }
   }
 
-  def upgrade(mode: UpgradeDb): Unit = {
-    dbRef.set(IndexedDb.init(mode))
+  def upgrade(mode: UpgradeDb): Observable[IDBDatabase] = {
+    dbRef.get.onCompleteNewTx { oldDb =>
+      oldDb(0).close()
+      val newDb = IndexedDb.init(mode)
+      dbRef.set(newDb)
+      newDb
+    }
   }
 }
 

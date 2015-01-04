@@ -1,12 +1,12 @@
 package com.viagraphs.idb
 
+import com.viagraphs.idb.IdbSupport._
 import monifu.concurrent.Scheduler
 import monifu.reactive.Observable
 import org.scalajs.dom.IDBKeyRange
 import upickle._
 import utest._
 import utest.framework.TestSuite
-import IdbSupport._
 import scala.concurrent.Future
 import scala.scalajs.js.Dynamic.{literal => lit}
 case class AnInstance(a: String, b: Int, c: Map[Int,String])
@@ -25,6 +25,34 @@ object IndexedDbSuite extends TestSuite {
   // TODO onComplete Profiler.printout()
 
   def tests = TestSuite {
+    "db-upgrade" - {
+      IndexedDb(
+        RecreateDb("db-upgrade",
+          Some { (db, ve) =>
+            db.createObjectStore("store1", lit("autoIncrement" -> true))
+            ()
+          }
+        )
+      ).upgrade(
+        UpgradeDb(
+          "db-upgrade",
+          2,
+          Some { (db, ve) =>
+            db.createObjectStore("store2", lit("autoIncrement" -> true))
+            ()
+          }
+        )
+      ).asFuture.map { newDbOpt =>
+        val newDb = newDbOpt.get
+        val objectStoreNames = newDb.objectStoreNames
+        val newVersion = newDb.version
+        assert(newVersion == 2)
+        assert(objectStoreNames.contains("store1"))
+        assert(objectStoreNames.contains("store2"))
+        newDb
+      }
+    }
+
     "doWorkOnSuccess" - {
       var completed = false
       Observable.fromIterable(List(1,2,3)).doWorkOnSuccess { result =>
