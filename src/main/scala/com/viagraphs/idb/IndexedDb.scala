@@ -200,7 +200,7 @@ object IndexedDb {
           observer.onError(new IDbRequestException("Opening db connection failed", req.error))
         }
         req.onblocked = (e: Event) => {
-          console.warn("Trying open DB but blocked " + req.error.name)
+          console.warn("Trying open DB but it is blocked")
         }
       }
 
