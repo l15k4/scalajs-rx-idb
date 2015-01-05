@@ -152,6 +152,9 @@ abstract class IdbSupport[K : W : R : ValidKey, V : W : R](var storeName: String
     def entries: Map[K,V]
   }
   case class rangedKey(range: IDBKeyRange, direction: Direction, entries: Map[K,V] = Map()) extends Key[K]
+  case class allKeys(direction: Direction, entries: Map[K,V] = Map()) extends Key[K] {
+    def range: IDBKeyRange = null
+  }
   case class lastKey(entries: Map[K,V] = Map()) extends Key[K] {
     def range: IDBKeyRange = null
     def direction: Direction = Direction.Prev
@@ -259,6 +262,7 @@ abstract class IdbSupport[K : W : R : ValidKey, V : W : R](var storeName: String
           case i: Index[K,V] => Right(tx.objectStore(storeName).index(i.indexName))
         }
         val keyRange = request.input
+        val oneTimer = keyRange.isInstanceOf[lastKey] || keyRange.isInstanceOf[firstKey]
         try {
           val req = target match {
             case Right(index) => request.asInstanceOf[IndexRequest[I,O,C]].executeOnIndex(index, Right(keyRange))
@@ -268,7 +272,7 @@ abstract class IdbSupport[K : W : R : ValidKey, V : W : R](var storeName: String
             e.target.asInstanceOf[IDBRequest].result match {
               case cursor: IDBCursorWithValue =>
                 request.onSuccess(Right(cursor), observer).onCompleteNow {
-                  case Continue.IsSuccess if keyRange.isInstanceOf[rangedKey] =>
+                  case Continue.IsSuccess if !oneTimer =>
                     cursor.continue()
                   case _ =>
                 }(IndexedDb.scheduler)
