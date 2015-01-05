@@ -144,17 +144,19 @@ abstract class IdbSupport[K : W : R : ValidKey, V : W : R](var storeName: String
   /**
    * IDB is requested by providing store keys as scala [[scala.collection.Iterable]] or this [[com.viagraphs.idb.IdbSupport.Key]].
    * As [[scala.collection.Iterable]] is a type constructor, [[com.viagraphs.idb.IdbSupport.Key]] must have become type constructor too to make abstraction over both
+   * @note that in case of Update operation you need to provide entries with new values
    */
   sealed trait Key[_] {
     def range: IDBKeyRange
     def direction: Direction
+    def entries: Map[K,V]
   }
-  case class rangedKey(range: IDBKeyRange, direction: Direction) extends Key[K]
-  case object lastKey extends Key[K] {
+  case class rangedKey(range: IDBKeyRange, direction: Direction, entries: Map[K,V] = Map()) extends Key[K]
+  case class lastKey(entries: Map[K,V] = Map()) extends Key[K] {
     def range: IDBKeyRange = null
     def direction: Direction = Direction.Prev
   }
-  case object firstKey extends Key[K] {
+  case class firstKey(entries: Map[K,V] = Map()) extends Key[K] {
     def range: IDBKeyRange = null
     def direction: Direction = Direction.Next
   }
@@ -207,7 +209,7 @@ abstract class IdbSupport[K : W : R : ValidKey, V : W : R](var storeName: String
 
   object Tx {
     implicit def iterable[C[X] <: Iterable[X]]: Tx[C] = new Tx[C] {
-      override def execute[I,O](request: Request[I, O, C], tx: IDBTransaction, observer: Observer[O]): Unit = {
+      def execute[I,O](request: Request[I, O, C], tx: IDBTransaction, observer: Observer[O]): Unit = {
         val target = IdbSupport.this match {
           case s: Store[K,V] => Left(tx.objectStore(storeName))
           case i: Index[K,V] => Right(tx.objectStore(storeName).index(i.indexName))
@@ -251,7 +253,7 @@ abstract class IdbSupport[K : W : R : ValidKey, V : W : R](var storeName: String
       }
     }
     implicit def range[C[X] <: Key[X]]: Tx[C] = new Tx[C] {
-      override def execute[I, O](request: Request[I, O, C], tx: IDBTransaction, observer: Observer[O]): Unit = {
+      def execute[I, O](request: Request[I, O, C], tx: IDBTransaction, observer: Observer[O]): Unit = {
         val target = IdbSupport.this match {
           case s: Store[K,V] => Left(tx.objectStore(storeName))
           case i: Index[K,V] => Right(tx.objectStore(storeName).index(i.indexName))

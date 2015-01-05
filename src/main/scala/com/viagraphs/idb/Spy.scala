@@ -20,9 +20,9 @@ trait Spy[K,V] extends Store[K,V] {
     Profiler.totalStats.append(entry)
   }
 
-  abstract override def update[C[_]](keys: C[K], entries: Map[K,V])(implicit e: Tx[C]): Observable[(K,V)] = {
+  abstract override def update[I, C[_]](input: C[I])(implicit p: StoreKeyPolicy[I], e: Tx[C]): Observable[(K,V)] = {
     val start = now
-    super.update(keys, entries)(e).dump("update").doOnComplete {
+    super.update(input)(p, e).dump("update").doOnComplete {
       log("update", start)
     }
   }

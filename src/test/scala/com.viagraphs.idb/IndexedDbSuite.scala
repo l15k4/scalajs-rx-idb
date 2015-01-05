@@ -125,7 +125,7 @@ object IndexedDbSuite extends TestSuite {
       val index = store.index[String]("testIndex")
       store.add(List(obj)).onCompleteNewTx { appendTuples =>
         assert(appendTuples.length == 1)
-        index.get(index.lastKey).onCompleteNewTx { tuples =>
+        index.get(index.lastKey()).onCompleteNewTx { tuples =>
           assert(tuples.length == 1)
           db.close()
         }
@@ -241,12 +241,12 @@ object IndexedDbSuite extends TestSuite {
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int, Int](dbName)
       store.add((1 to 10).map(k => k -> k).toMap).onCompleteNewTx { tuples =>
-        store.get(store.lastKey).onCompleteNewTx { lastTuples =>
+        store.get(store.lastKey()).onCompleteNewTx { lastTuples =>
           assert(lastTuples.length == 1)
           val (lastKey, lastValue) = lastTuples(0)
           assert(lastValue == 10)
           assert(lastKey == 10)
-          store.get(store.firstKey).onCompleteNewTx { firstTuples =>
+          store.get(store.firstKey()).onCompleteNewTx { firstTuples =>
             assert(firstTuples.length == 1)
             val (firstKey, firstVal) = firstTuples(0)
             assert(firstVal == 1)
@@ -274,11 +274,11 @@ object IndexedDbSuite extends TestSuite {
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int, Int](dbName)
       store.add(1 to 10).onCompleteNewTx { tuples =>
-        store.delete(store.lastKey).onCompleteNewTx { empty =>
+        store.delete(store.lastKey()).onCompleteNewTx { empty =>
           store.count.map { count =>
             assert(count == 9)
           }
-          store.delete(store.firstKey).onCompleteNewTx { empty =>
+          store.delete(store.firstKey()).onCompleteNewTx { empty =>
             store.count.map { count =>
               assert(count == 8)
             }
@@ -297,7 +297,7 @@ object IndexedDbSuite extends TestSuite {
       val dbName = "get-last-on-empty-store"
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int, String](dbName)
-      store.get(store.lastKey).onCompleteNewTx { res =>
+      store.get(store.lastKey()).onCompleteNewTx { res =>
         assert(res.length == 0)
         db.close()
       }.asFuture
@@ -317,8 +317,11 @@ object IndexedDbSuite extends TestSuite {
       val dbName = "update-entries"
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int, Int](dbName)
-      store.add(1 to 10).onCompleteNewTx { tuples =>
-        store.update(9 to 10, Map(9->90, 10->100)).onCompleteNewTx { tuples =>
+      store.add(10 to 20).onCompleteNewTx { tuples =>
+        store.update(Map(9->90, 10->100)).onCompleteNewTx { tuples =>
+          val (updateKeys, updateValues) = tuples.unzip
+          assert(updateKeys == Seq(9,10))
+          assert(updateValues == Seq(90,100))
           store.get(9 to 10).onCompleteNewTx { result =>
             val (_, values) = result.unzip
             assert(values == Seq(90,100))
@@ -332,9 +335,12 @@ object IndexedDbSuite extends TestSuite {
       val dbName = "update-entries"
       val db = IndexedDb(recreateDB(dbName))
       val store = db.openStore[Int, Int](dbName)
-      store.add(1 to 10).onCompleteNewTx { tuples =>
-        val range = store.rangedKey(IDBKeyRange.bound(9,10), Direction.Next)
-        store.update(range, Map(9->90, 10->100)).onCompleteNewTx { tuples =>
+      store.add(10 to 20).onCompleteNewTx { tuples =>
+        val range = store.rangedKey(IDBKeyRange.bound(9,10), Direction.Next, Map(9->90, 10->100))
+        store.update(range).onCompleteNewTx { tuples =>
+          val (updateKeys, updateValues) = tuples.unzip
+          assert(updateKeys == Seq(9,10))
+          assert(updateValues == Seq(90,100))
           store.get(range).onCompleteNewTx { result =>
             val (_, values) = result.unzip
             assert(values == Seq(90,100))

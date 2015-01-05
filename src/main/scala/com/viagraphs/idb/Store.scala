@@ -95,50 +95,39 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
 
   /**
    * Updates store records matching keys with entries
-   * @param keys keys of records to update - either [[scala.collection.Iterable]] or [[com.viagraphs.idb.IdbSupport.Key]]
-   * @param entries map of key-value pairs to update store with
-   * @return observable of the updated key-value pairs (the old values)
-   * @note providing both keys and entries[key,value] is necessary due to IDB's cursor internal workings - I was unable to abstract updates better
+   * @param input records to update - either [[scala.collection.Iterable]] or [[com.viagraphs.idb.IdbSupport.Key]] with entries containing new values
+   * @return observable of the updated key-value pairs (the new values)
    */
-  def update[C[_]](keys: C[K], entries: Map[K,V])(implicit e: Tx[C]): Observable[(K,V)] = new Request[K, (K,V), C](keys, e) {
+  def update[I, C[_]](input: C[I])(implicit p: StoreKeyPolicy[I], e: Tx[C]): Observable[(K,V)] = new Request[I, (K,V), C](input, e) {
     def txAccess = ReadWrite(storeName)
 
-    def execute(store: IDBObjectStore, input: Either[K, Key[K]]) = input match {
+    def execute(store: IDBObjectStore, input: Either[I, Key[I]]) = input match {
       case Right(keyRange) =>
         store.openCursor(keyRange.range, keyRange.direction.value)
-      case Left(key) =>
-        val value = entries.getOrElse(key, throw new IllegalArgumentException(s"Key $key is not present in update entries !"))
-        store.put(
-          json.writeJs(writeJs[V](value)).asInstanceOf[js.Any],
-          json.writeJs(writeJs[K](key)).asInstanceOf[js.Any]
-        )
+      case Left(entry) =>
+        p.put(entry, store)
     }
 
-    def onSuccess(result: Either[(K, Any), IDBCursorWithValue], observer: Observer[(K, V)]): Future[Ack] = {
+    def onSuccess(result: Either[(I, Any), IDBCursorWithValue], observer: Observer[(K, V)]): Future[Ack] = {
       result match {
         case Right(cursor) =>
           val promise = Promise[Ack]()
           val key = readJs[K](json.readJs(cursor.key))
-          val oldVal = readJs[V](json.readJs(cursor.value))
-          val newVal = entries.getOrElse(key, throw new IllegalArgumentException(s"Key $key is not present in update entries !"))
+          val newVal = input.asInstanceOf[Key[K]].entries(key)
           val req = cursor.update(json.writeJs(writeJs[V](newVal)).asInstanceOf[js.Any])
           req.onsuccess = (e: Event) =>
-            observer.onNext((key,oldVal))
+            observer.onNext((key,newVal))
             promise.success(Continue)
           req.onerror = (e: ErrorEvent) => {
             observer.onError(new IDbRequestException(s"Updating cursor '$key' with '$newVal' failed", req.error))
             promise.success(Cancel)
           }
           promise.future
-        case Left((key,value)) =>
-          (value : UndefOr[Any]).fold[Future[Ack]](Continue) { anyVal =>
-            observer.onNext(
-              key -> readJs[V](json.readJs(anyVal))
-            )
-          }
+        case Left((entry, key)) =>
+          observer.onNext(readJs[K](json.readJs(key)) -> p.value(entry))
       }
     }
-    def onError(input: Option[K]) = s"updating ${input.getOrElse("")} from $storeName failed"
+    def onError(input: Option[I]) = s"updating ${input.getOrElse("")} from $storeName failed"
   }
 
   /**
