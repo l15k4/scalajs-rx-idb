@@ -11,7 +11,7 @@ import scala.collection.mutable.ListBuffer
 import scala.concurrent.{Future, Promise}
 import scala.scalajs.js
 import scala.util.control.NonFatal
-import scala.util.{Failure, Success}
+import scala.util.{Try, Failure, Success}
 
 /**
  * A store key might be :
@@ -68,6 +68,15 @@ class IndexedDb private(val dbRef: Atomic[Observable[IDBDatabase]]) {
         observer.onNext(db.name)
         observer.onComplete()
       }(db => s"Unable to get database name")
+    }
+
+  def getVersion: Observable[Int] =
+    Observable.create { subscriber =>
+      val observer = subscriber.observer
+      dbRef.get.foreachWith(observer) { db =>
+        observer.onNext(Try(db.version).getOrElse(1))
+        observer.onComplete()
+      }(db => s"Unable to get database version")
     }
 
   /**
