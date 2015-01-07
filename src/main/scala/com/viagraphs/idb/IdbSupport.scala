@@ -129,7 +129,7 @@ abstract class IdbSupport[K : W : R : ValidKey, V : W : R](var storeName: String
   abstract class Request[I, O, C[_]](val input: C[I], tx: Tx[C]) extends Observable[O] {
     def txAccess: TxAccess
     def execute(store: IDBObjectStore, input: Either[I, Key[I]]): IDBRequest
-    def onSuccess(result: Either[(I, Any), IDBCursorWithValue], observer: Observer[O]): Future[Ack]
+    def onSuccess(result: Either[(I, js.Any), IDBCursorWithValue], observer: Observer[O]): Future[Ack]
     def onError(input: Option[I] = None): String
     def subscribeFn(subscriber: Subscriber[O]): Unit = {
       val observer = subscriber.observer

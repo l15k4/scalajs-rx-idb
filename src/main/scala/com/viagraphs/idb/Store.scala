@@ -10,7 +10,7 @@ import upickle._
 import scala.concurrent.{Future, Promise}
 import scala.language.higherKinds
 import scala.scalajs.js
-import scala.scalajs.js.UndefOr
+import scala.scalajs.js.{UndefOr}
 
 abstract class Index[K : W : R : ValidKey, V : W : R] protected (initialName: String, dbRef: Atomic[Observable[IDBDatabase]]) extends IdbSupport[K,V](initialName, dbRef) {
   def indexName: String
@@ -38,14 +38,14 @@ abstract class Index[K : W : R : ValidKey, V : W : R] protected (initialName: St
         store.get(json.writeJs(writeJs[K](key)).asInstanceOf[js.Any])
     }
 
-    def onSuccess(result: Either[(K, Any), IDBCursorWithValue], observer: Observer[(K, V)]): Future[Ack] = {
+    def onSuccess(result: Either[(K, js.Any), IDBCursorWithValue], observer: Observer[(K, V)]): Future[Ack] = {
       result match {
         case Right(cursor) =>
           observer.onNext(
             readJs[K](json.readJs(cursor.key)) -> readJs[V](json.readJs(cursor.value))
           )
         case Left((key,value)) =>
-          (value : UndefOr[Any]).fold[Future[Ack]](Continue) { anyVal =>
+          (value : UndefOr[js.Any]).fold[Future[Ack]](Continue) { anyVal =>
             observer.onNext(
               key -> readJs[V](json.readJs(anyVal))
             )
@@ -80,7 +80,7 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
           throw new IllegalStateException("Cannot happen, add doesn't support KeyRanges")
       }
 
-      def onSuccess(result: Either[(I, Any), IDBCursorWithValue], observer: Observer[(K, V)]): Future[Ack] = {
+      def onSuccess(result: Either[(I, js.Any), IDBCursorWithValue], observer: Observer[(K, V)]): Future[Ack] = {
         result match {
           case Left((in, key)) =>
             observer.onNext(readJs[K](json.readJs(key)) -> p.value(in))
@@ -108,7 +108,7 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
         p.put(entry, store)
     }
 
-    def onSuccess(result: Either[(I, Any), IDBCursorWithValue], observer: Observer[(K, V)]): Future[Ack] = {
+    def onSuccess(result: Either[(I, js.Any), IDBCursorWithValue], observer: Observer[(K, V)]): Future[Ack] = {
       result match {
         case Right(cursor) =>
           val promise = Promise[Ack]()
@@ -145,7 +145,7 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
         store.delete(json.writeJs(writeJs[K](key)).asInstanceOf[js.Any])
     }
 
-    def onSuccess(result: Either[(K, Any), IDBCursorWithValue], observer: Observer[Nothing]): Future[Ack] = {
+    def onSuccess(result: Either[(K, js.Any), IDBCursorWithValue], observer: Observer[Nothing]): Future[Ack] = {
       result match {
         case Left(_) => Continue
         case Right(cursor) =>
