@@ -176,6 +176,8 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
         val req = tx.objectStore(storeName).count()
         req.onsuccess = (e: Event) => {
           observer.onNext(e.target.asInstanceOf[IDBOpenDBRequest].result.asInstanceOf[Int])
+        }
+        tx.oncomplete = (e: Event) => {
           observer.onComplete()
         }
         req.onerror = (e: ErrorEvent) => {
