@@ -4,7 +4,8 @@ import com.viagraphs.idb.IdbSupport.RequestPimp
 import monifu.concurrent.Scheduler
 import monifu.concurrent.atomic.{AtomicAny, Atomic}
 import monifu.reactive.Observable
-import org.scalajs.dom._
+import org.scalajs.dom.raw._
+import org.scalajs.dom.{window, console}
 import upickle.Aliases.{R, W}
 
 import scala.collection.mutable.ListBuffer

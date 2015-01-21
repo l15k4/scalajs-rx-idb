@@ -3,7 +3,7 @@ package com.viagraphs.idb
 import com.viagraphs.idb.IdbSupport._
 import monifu.concurrent.Scheduler
 import monifu.reactive.Observable
-import org.scalajs.dom.IDBKeyRange
+import org.scalajs.dom.raw.IDBKeyRange
 import upickle._
 import utest._
 import utest.framework.TestSuite
@@ -77,11 +77,14 @@ object IndexedDbSuite extends TestSuite {
 
     "get-db-names" - {
       val idb = IndexedDb(recreateDB("get-db-names"))
-      IndexedDb.getDatabaseNames.flatMap { names =>
-        assert(names.contains("get-db-names"))
-        idb.close().map { name =>
-            name -> (0 until names.length).foldLeft(List[String]()) { case (acc, i) => names(i) :: acc}
-        }.asFuture
+      idb.dbRef.get.doOnComplete {
+        IndexedDb.getDatabaseNames.flatMap { names =>
+          println("get-db-names length " + names.length)
+          assert(names.contains("get-db-names"))
+          idb.close().map { name =>
+              name -> (0 until names.length).foldLeft(List[String]()) { case (acc, i) => names(i) :: acc}
+          }.asFuture
+        }
       }
     }
 

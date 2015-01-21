@@ -3,7 +3,7 @@ package com.viagraphs.idb
 import monifu.concurrent.atomic.Atomic
 import monifu.reactive.Ack.{Cancel, Continue}
 import monifu.reactive.{Ack, Observable, Observer}
-import org.scalajs.dom._
+import org.scalajs.dom.raw._
 import upickle.Aliases.{R, W}
 import upickle._
 
@@ -215,6 +215,6 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
         val tx = db.transaction(txAccess.storeNames.toJSArray, txAccess.value)
         observer.onNext(tx)
         observer.onComplete()
-      }(db => s"Unable to openStoreTx $name in db ${db.name}")(IndexedDb.scheduler)
+      }(db => s"Unable to openStoreTx $storeName in db ${db.name}")(IndexedDb.scheduler)
     }
 }

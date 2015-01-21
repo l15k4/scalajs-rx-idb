@@ -31,8 +31,7 @@ I came to conclusion that IndexedDb is rather a db engine that is meant to be us
 
 **NOTE** 
 
-* It currently depends on unaccepted [utest PR](https://github.com/lihaoyi/utest/pull/40), **thus it has not been released yet.**
-  * I'll release it scala-js 0.6.0 version is out
+* **it has not been released yet.**, I'll release it when scala-js 0.6.0 version is out. There is a lot to test anyway.
 * Just the main operations are tested so far, it's a work in progress, there is no time to test edge cases
 * The performance might get a little worse in comparison with direct IDB access
   * But after you spend some time with IDB you'll know that loosing a few milliseconds is always better than lock starvation that might put the entire application down or waste hours of troubleshooting

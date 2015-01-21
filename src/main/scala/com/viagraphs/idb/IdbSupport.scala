@@ -4,7 +4,7 @@ import monifu.concurrent.Scheduler
 import monifu.concurrent.atomic.Atomic
 import monifu.reactive.Ack.Continue
 import monifu.reactive.{Subscriber, Ack, Observer, Observable}
-import org.scalajs.dom._
+import org.scalajs.dom.raw._
 import upickle.Aliases._
 import upickle._
 import monifu.reactive.internals.FutureAckExtensions
