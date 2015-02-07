@@ -9,7 +9,7 @@ import upickle.Aliases._
 import upickle._
 import monifu.reactive.internals.FutureAckExtensions
 import scala.annotation.implicitNotFound
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ListBuffer, ArrayBuffer}
 import scala.concurrent.{Promise, Future}
 import scala.scalajs.js
 import scala.util.control.NonFatal
@@ -307,17 +307,24 @@ object IdbSupport {
       case x: Js.Arr => TreeMap(x.value.map(readJs[(K, V)]): _*)
     }
   )
-  implicit class RequestPimp[+E](observable: Observable[E]) {
+  implicit class RequestPimp[+E](source: Observable[E]) {
 
-    def asCompletedFuture(implicit s: Scheduler): Future[Ack] = {
-      val promise = Promise[Ack]()
-      observable.unsafeSubscribe(new Observer[E] {
+    /**
+     * Observable#asFuture completes after first element, this one when at the end with the result buffered
+     */
+    def asCompletedFuture(implicit s: Scheduler): Future[List[E]] = {
+      val promise = Promise[List[E]]()
+      val buffer = ListBuffer[E]()
+      source.unsafeSubscribe(new Observer[E] {
         def onNext(elem: E) = {
+          buffer += elem
           Continue
         }
+
         def onComplete() = {
-          promise.trySuccess(Continue)
+          promise.trySuccess(buffer.toList)
         }
+
         def onError(ex: Throwable) = {
           promise.tryFailure(ex)
         }
@@ -325,14 +332,48 @@ object IdbSupport {
       promise.future
     }
 
-    def onCompleteNewTx[U](f: Seq[E] => Observable[U])(implicit s: Scheduler): Observable[U] = {
-      onCompleteNewTx(emptyYieldingBuffer(observable, Integer.MAX_VALUE)(IndexedDb.scheduler).map(f))
-    }
+    def finallyDo(success: => Unit = (), error: => Unit = (), cancel: => Unit = ()): Observable[E] =
+      Observable.create[E] { subscriber =>
+        implicit val s = subscriber.scheduler
+        val observer = subscriber.observer
+
+        source.unsafeSubscribe(new Observer[E] {
+          private[this] val wasExecuted = Atomic(false)
+
+          private[this] def execute(callback: => Unit) = {
+            if (wasExecuted.compareAndSet(expect = false, update = true))
+              try callback catch {
+                case NonFatal(ex) =>
+                  s.reportFailure(ex)
+              }
+          }
+
+          def onNext(elem: E) = {
+            val f = observer.onNext(elem)
+            f.onCancel(execute(cancel))
+            f
+          }
+
+          def onError(ex: Throwable): Unit = {
+            try observer.onError(ex) finally
+              s.scheduleOnce {
+                execute(error)
+              }
+          }
+
+          def onComplete(): Unit = {
+            try observer.onComplete() finally
+              s.scheduleOnce {
+                execute(success)
+              }
+          }
+        })
+      }
 
     def doWorkOnSuccess(f: Seq[E] => Unit)(implicit s: Scheduler): Observable[E] =
       Observable.create { subscriber =>
         val observer = subscriber.observer
-        observable.unsafeSubscribe(new Observer[E] {
+        source.unsafeSubscribe(new Observer[E] {
           private[this] var buffer = ArrayBuffer.empty[E]
           private[this] val wasExecuted = Atomic(false)
 
@@ -369,10 +410,10 @@ object IdbSupport {
         })
       }
 
-    private def emptyYieldingBuffer[T](source: Observable[T], count: Int)(implicit s: Scheduler): Observable[Seq[T]] =
+    private def emptyYieldingBuffer[T](obs: Observable[T], count: Int)(implicit s: Scheduler): Observable[Seq[T]] =
       Observable.create { subscriber =>
         val observer = subscriber.observer
-        source.unsafeSubscribe(new Observer[T] {
+        obs.unsafeSubscribe(new Observer[T] {
           private[this] var buffer = ArrayBuffer.empty[T]
           private[this] var lastAck = Continue : Future[Ack]
           private[this] var size = 0
@@ -405,10 +446,14 @@ object IdbSupport {
         })
       }
 
-    private def onCompleteNewTx[U, T](source: Observable[T])(implicit ev: T <:< Observable[U], s: Scheduler): Observable[U] = {
+    def onCompleteNewTx[U](f: Seq[E] => Observable[U])(implicit s: Scheduler): Observable[U] = {
+      onCompleteNewTx(emptyYieldingBuffer(source, Integer.MAX_VALUE)(IndexedDb.scheduler).map(f))
+    }
+
+    private def onCompleteNewTx[U, T](obs: Observable[T])(implicit ev: T <:< Observable[U], s: Scheduler): Observable[U] = {
       Observable.create[U] { subscriber =>
         val observerU = subscriber.observer
-        source.unsafeSubscribe(new Observer[T] {
+        obs.unsafeSubscribe(new Observer[T] {
           private[this] var childObservable: T = _
 
           def onNext(elem: T) = {

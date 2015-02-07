@@ -55,24 +55,25 @@ object IndexedDbSuite extends TestSuite {
 
     "doWorkOnSuccess" - {
       var completed = false
-      Observable.fromIterable(List(1,2,3)).doWorkOnSuccess { result =>
+      Observable.fromIterable(List(1, 2, 3)).doWorkOnSuccess { result =>
         assert(completed)
-        assert(result == List(1)) // asFuture cancels after the first one
+        assert(result == List(1, 2, 3)) // asFuture cancels after the first one
       }.doOnComplete {
         completed = true
-      }.asFuture
+      }.asCompletedFuture
+    }
+
+    "asCompletedFuture" - {
+      Observable.fromIterable(List(1, 2, 3)).asCompletedFuture.map { result =>
+        assert(result == List(1, 2, 3)) // asFuture cancels after the first one
+      }
     }
 
     "onCompleteNewTx" - {
-      var completed = false
       Observable.fromIterable(List(1,2,3)).onCompleteNewTx { result =>
         assert(result == List(1,2,3))
-        Observable.empty.doOnStart { nothing =>
-          assert(completed)
-        }
-      }.doOnComplete {
-        completed = true
-      }.asFuture
+        Observable.fromIterable(List("a","b","c"))
+      }.asCompletedFuture
     }
 
     "get-db-names" - {
