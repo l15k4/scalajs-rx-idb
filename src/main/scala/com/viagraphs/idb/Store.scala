@@ -10,7 +10,7 @@ import upickle._
 import scala.concurrent.{Future, Promise}
 import scala.language.higherKinds
 import scala.scalajs.js
-import scala.scalajs.js.{UndefOr}
+import scala.scalajs.js.UndefOr
 
 abstract class Index[K : W : R : ValidKey, V : W : R] protected (initialName: String, dbRef: Atomic[Observable[IDBDatabase]]) extends IdbSupport[K,V](initialName, dbRef) {
   def indexName: String
@@ -170,8 +170,7 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
    */
   def count: Observable[Int] = {
     def errorMsg = s"Database.count($storeName) failed"
-    Observable.create { subscriber =>
-      val observer = subscriber.observer
+    Observable.create { observer =>
       openTx(ReadOnly(storeName)).foreachWith(observer) { tx =>
         val req = tx.objectStore(storeName).count()
         req.onsuccess = (e: Event) => {
@@ -192,8 +191,7 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
    */
   def clear: Observable[Nothing] = {
     def errorMsg = s"Database.clear($storeName) failed"
-    Observable.create { subscriber =>
-      val observer = subscriber.observer
+    Observable.create { observer =>
       openTx(ReadWrite(storeName)).foreachWith(observer) { tx =>
         tx.objectStore(storeName).clear()
         tx.oncomplete = (e: Event) => {
@@ -209,8 +207,7 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
   def indexName: String = ???
   import scala.scalajs.js.JSConverters._
   private[this] def openTx(txAccess: TxAccess): Observable[IDBTransaction] =
-    Observable.create { subscriber =>
-      val observer = subscriber.observer
+    Observable.create { observer =>
       dbRef.get.foreachWith(observer) { db =>
         val tx = db.transaction(txAccess.storeNames.toJSArray, txAccess.value)
         observer.onNext(tx)
