@@ -4,9 +4,9 @@ import monifu.concurrent.atomic.Atomic
 import monifu.reactive.Ack.{Cancel, Continue}
 import monifu.reactive.{Ack, Observable, Observer}
 import org.scalajs.dom.raw._
-import upickle.json
-import upickle.legacy._
-import upickle.legacy.Aliases._
+  import upickle.json
+  import upickle.legacy._
+  import upickle.legacy.Aliases._
 
 import scala.concurrent.{Future, Promise}
 import scala.language.higherKinds
