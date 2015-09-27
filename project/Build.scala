@@ -11,7 +11,7 @@ object Build extends sbt.Build {
       .settings(
         organization := "com.viagraphs",
         name := "scalajs-rx-idb",
-        version := "0.0.6-SNAPSHOT",
+        version := "0.0.7-SNAPSHOT",
         scalaVersion := "2.11.7",
         scalacOptions ++= Seq(
           "-unchecked", "-deprecation", "-feature", "-Xfatal-warnings",

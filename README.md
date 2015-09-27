@@ -3,8 +3,8 @@
 
 Indexed Database reactive (Rx) wrapper written in [scala.js](1) using [monifu](2), [uPickle](3) and [uTest](4).
 
-* dependency : "com.viagraphs" %%% "scalajs-rx-idb" % "0.0.6-SNAPSHOT"
-* Scala.js version : 0.6.0-RC1
+* dependency : `"com.viagraphs" %%% "scalajs-rx-idb" % "0.0.7"`
+* Scala.js version : 0.6.5
 
 Primarily it is trying to be :
 
