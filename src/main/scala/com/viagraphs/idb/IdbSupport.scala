@@ -5,8 +5,9 @@ import monifu.concurrent.atomic.Atomic
 import monifu.reactive.Ack.Continue
 import monifu.reactive.{Subscriber, Ack, Observer, Observable}
 import org.scalajs.dom.raw._
-import upickle.Aliases._
-import upickle._
+import upickle.{Js, json}
+import upickle.legacy._
+import upickle.legacy.Aliases._
 import scala.annotation.implicitNotFound
 import scala.collection.mutable.{ListBuffer, ArrayBuffer}
 import scala.concurrent.{Promise, Future}

@@ -6,7 +6,7 @@ import monifu.concurrent.atomic.{AtomicAny, Atomic}
 import monifu.reactive.Observable
 import org.scalajs.dom.raw._
 import org.scalajs.dom.{window, console}
-import upickle.Aliases.{R, W}
+import upickle.legacy.Aliases._
 
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.{Future, Promise}
