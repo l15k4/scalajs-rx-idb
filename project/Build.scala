@@ -12,7 +12,7 @@ object Build extends sbt.Build {
         organization := "com.viagraphs",
         name := "scalajs-rx-idb",
         version := "0.0.6-SNAPSHOT",
-        scalaVersion := "2.11.5",
+        scalaVersion := "2.11.7",
         scalacOptions ++= Seq(
           "-unchecked", "-deprecation", "-feature", "-Xfatal-warnings",
           "-Xlint", "-Xfuture",
@@ -20,10 +20,10 @@ object Build extends sbt.Build {
           "-Ywarn-nullary-override", "-Ywarn-nullary-unit", "-Yno-adapted-args"
         ),
         libraryDependencies ++= Seq(
-          "org.scala-js" %%% "scalajs-dom" % "0.7.1-SNAPSHOT",
-          "org.monifu" %%% "monifu" % "0.1-SNAPSHOT",
-          "com.lihaoyi" %%% "upickle" % "0.2.6-RC1",
-          "com.lihaoyi" %%% "utest" % "0.2.5-RC1" % "test"
+          "org.scala-js" %%% "scalajs-dom" % "0.8.1",
+          "org.monifu" %%% "monifu" % "1.0-RC3",
+          "com.lihaoyi" %%% "upickle" % "0.3.6",
+          "com.lihaoyi" %%% "utest" % "0.3.1" % "test"
         ),
         scalaJSStage := FastOptStage,
         testFrameworks += new TestFramework("utest.runner.Framework"),
