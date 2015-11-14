@@ -1,7 +1,7 @@
 #scalajs-rx-idb
 
 
-Indexed Database reactive (Rx) wrapper written in [scala.js](1) using [monifu](2), [uPickle](3) and [uTest](4).
+Indexed Database reactive (Rx) wrapper written in [scala.js][^1] using [monifu][^2], [uPickle][^3] and [uTest][^4].
 
 * dependency : `"com.viagraphs" %%% "scalajs-rx-idb" % "0.0.8-SNAPSHOT"`
 * Scala.js version : 0.6.5
@@ -10,7 +10,7 @@ Primarily it is trying to be :
 
 ##type safe
 
-* thanks to [uPickle](3) and its Reader/Writer type classes user just declares input/return types and uPickle does the rest. It even allows you to deserialize objects in a type safe manner without knowing what type of object you're gonna get from database (See uPickle's tagged values in sealed hierarchies)
+* thanks to [uPickle][^3] and its Reader/Writer type classes user just declares input/return types and uPickle does the rest. It even allows you to deserialize objects in a type safe manner without knowing what type of object you're gonna get from database (See uPickle's tagged values in sealed hierarchies)
 * a key validation type class doesn't let you store keys of unsupported types
 * there is an abstraction over CRUD operations allowing seamlessly work with both scala collections and idb key ranges over store or index
 
@@ -43,9 +43,9 @@ I came to conclusion that IndexedDb is rather a db engine that is meant to be us
 
 * There was a significant resistance doing abstraction over a javascript application that itself doesn't even have a common interface for IDBObjectStore and IDBIndex even though both being a Store, sharing common interface
 * I was fighting scalac a lot 
-  * [Scalac type inference sometimes really surprises (unpleasantly)](5) - I had to combine path dependent types with type classes which is always a bad thing (I'll personally never do it again)
-  * [Scalac doesn't look into descendants of associated types](6) - which also made my day
-  * [After I rewrote API to path dependent style to spare user from having to explicitly specify types all the time](7) - I found out that I should have probably rewritten the entire application from scratch 
+  * [Scalac type inference sometimes really surprises (unpleasantly)][^5] - I had to combine path dependent types with type classes which is always a bad thing (I'll personally never do it again)
+  * [Scalac doesn't look into descendants of associated types][^6] - which also made my day
+  * [After I rewrote API to path dependent style to spare user from having to explicitly specify types all the time][^7] - I found out that I should have probably rewritten the entire application from scratch 
   because due to these unexpected issues **the interface turned out to be a little less self explanatory than I intended it to be, I'd like to rewrite it a little in future** 
 
 ## Important API - Store
@@ -142,11 +142,10 @@ store.add(List(obj)).onCompleteNewTx { appendTuples =>
 ```
 
 
-  [1]: http://www.scala-js.org
-  [2]: http://www.monifu.org
-  [3]: https://github.com/lihaoyi/upickle
-  [4]: https://github.com/lihaoyi/utest
-  [5]: http://stackoverflow.com/q/27468053/306488
-  [6]: http://stackoverflow.com/q/27524773/306488
-  [7]: http://stackoverflow.com/q/27589770/306488
-  
+[^1]: http://www.scala-js.org
+[^2]: http://www.monifu.org
+[^3]: https://github.com/lihaoyi/upickle
+[^4]: https://github.com/lihaoyi/utest
+[^5]: http://stackoverflow.com/q/27468053/306488
+[^6]: http://stackoverflow.com/q/27524773/306488
+[^7]: http://stackoverflow.com/q/27589770/306488
