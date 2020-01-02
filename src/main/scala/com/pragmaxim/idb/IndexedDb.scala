@@ -1,6 +1,6 @@
-package com.viagraphs.idb
+package com.pragmaxim.idb
 
-import com.viagraphs.idb.IdbSupport.RequestPimp
+import com.pragmaxim.idb.IdbSupport.RequestPimp
 import monifu.concurrent.Scheduler
 import monifu.concurrent.atomic.{AtomicAny, Atomic}
 import monifu.reactive.Observable

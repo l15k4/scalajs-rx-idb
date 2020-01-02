@@ -1,4 +1,4 @@
-package com.viagraphs.idb
+package com.pragmaxim.idb
 
 import monifu.concurrent.Scheduler
 import monifu.concurrent.atomic.Atomic
@@ -124,8 +124,9 @@ abstract class IdbSupport[K : W : R : ValidKey, V : W : R](var storeName: String
 
   /**
    * Request is an observable of Output/results
-   * @param input an [[scala.collection.Iterable]] or [[com.viagraphs.idb.IdbSupport.Key]] of keys or values transaction is created over
-   * @param tx transaction strategy for either [[scala.collection.Iterable]] or [[com.viagraphs.idb.IdbSupport.Key]]
+ *
+   * @param input an [[scala.collection.Iterable]] or [[com.pragmaxim.idb.IdbSupport.Key]] of keys or values transaction is created over
+   * @param tx    transaction strategy for either [[scala.collection.Iterable]] or [[com.pragmaxim.idb.IdbSupport.Key]]
    */
   abstract class Request[I, O, C[_]](val input: C[I], tx: Tx[C]) extends Observable[O] {
     def txAccess: TxAccess
@@ -142,8 +143,9 @@ abstract class IdbSupport[K : W : R : ValidKey, V : W : R](var storeName: String
   }
 
   /**
-   * IDB is requested by providing store keys as scala [[scala.collection.Iterable]] or this [[com.viagraphs.idb.IdbSupport.Key]].
-   * As [[scala.collection.Iterable]] is a type constructor, [[com.viagraphs.idb.IdbSupport.Key]] must have become type constructor too to make abstraction over both
+   * IDB is requested by providing store keys as scala [[scala.collection.Iterable]] or this [[com.pragmaxim.idb.IdbSupport.Key]].
+   * As [[scala.collection.Iterable]] is a type constructor, [[com.pragmaxim.idb.IdbSupport.Key]] must have become type constructor too to make abstraction over both
+ *
    * @note that in case of Update operation you need to provide entries with new values
    */
   sealed trait Key[_] {
@@ -202,8 +204,9 @@ abstract class IdbSupport[K : W : R : ValidKey, V : W : R](var storeName: String
   }
 
   /**
-   * Type class representing a transaction strategy over request input that is either [[scala.collection.Iterable]] or [[com.viagraphs.idb.IdbSupport.Key]]
-   * @tparam C either [[scala.collection.Iterable]] or [[com.viagraphs.idb.IdbSupport.Key]] type constructor
+   * Type class representing a transaction strategy over request input that is either [[scala.collection.Iterable]] or [[com.pragmaxim.idb.IdbSupport.Key]]
+ *
+   * @tparam C either [[scala.collection.Iterable]] or [[com.pragmaxim.idb.IdbSupport.Key]] type constructor
    */
   @implicitNotFound("No implicit Tx defined for ${C}, only Key and Iterable types are supported")
   abstract class Tx[C[_]] {

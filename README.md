@@ -1,10 +1,17 @@
 #scalajs-rx-idb
 
 
-Indexed Database reactive (Rx) wrapper written in [scala.js][^1] using [monifu][^2], [uPickle][^3] and [uTest][^4].
+Indexed Database reactive (Rx) wrapper written in [scala.js][^1] using [monix][^2], [uPickle][^3] and [uTest][^4].
 
-* dependency : `"com.viagraphs" %%% "scalajs-rx-idb" % "0.0.8-SNAPSHOT"`
-* Scala.js version : 0.6.5
+* Scala.js version : 0.6.19
+
+```scala
+resolvers in ThisBuild ++= Seq(
+  Resolver.bintrayRepo("pragmaxim", "maven")
+)
+libraryDependencies ++= Seq("com.pragmaxim" %%% "scalajs-rx-idb" % "0.0.9")
+```
+
 
 Primarily it is trying to be :
 
@@ -73,7 +80,7 @@ def update[I, C[_]](input: C[I])(implicit p: StoreKeyPolicy[I], e: Tx[C]): Obser
 ## Examples
 
 * The best place to look at examples is IndexedDbSuite
-* Note that the crud operations accept either anything that is `Iterable` or any `com.viagraphs.idb.Store.Key`
+* Note that the crud operations accept either anything that is `Iterable` or any `com.pragmaxim.idb.Store.Key`
 
 * working with iterables
 
@@ -143,7 +150,7 @@ store.add(List(obj)).onCompleteNewTx { appendTuples =>
 
 
 [^1]: http://www.scala-js.org
-[^2]: http://www.monifu.org
+[^2]: http://www.monix.io
 [^3]: https://github.com/lihaoyi/upickle
 [^4]: https://github.com/lihaoyi/utest
 [^5]: http://stackoverflow.com/q/27468053/306488

@@ -1,4 +1,4 @@
-package com.viagraphs
+package com.pragmaxim
 
 import monifu.concurrent.Scheduler
 import monifu.reactive.Ack.{Cancel, Continue}

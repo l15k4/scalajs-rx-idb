@@ -1,6 +1,5 @@
-package com.viagraphs.idb
+package com.pragmaxim.idb
 
-import com.viagraphs.idb.IdbSupport._
 import monifu.concurrent.Scheduler
 import monifu.reactive.Observable
 import org.scalajs.dom.raw.IDBKeyRange

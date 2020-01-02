@@ -1,4 +1,4 @@
-package com.viagraphs.idb
+package com.pragmaxim.idb
 
 import monifu.reactive.Observable
 import scala.language.higherKinds

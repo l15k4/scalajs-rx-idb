@@ -1,4 +1,4 @@
-package com.viagraphs.idb
+package com.pragmaxim.idb
 
 import monifu.concurrent.atomic.Atomic
 import monifu.reactive.Ack.{Cancel, Continue}
@@ -18,7 +18,8 @@ abstract class Index[K : W : R : ValidKey, V : W : R] protected (initialName: St
 
   /**
    * Gets records by keys
-   * @param keys keys of records to get - either [[scala.collection.Iterable]] or [[com.viagraphs.idb.IdbSupport.Key]]
+ *
+   * @param keys keys of records to get - either [[scala.collection.Iterable]] or [[com.pragmaxim.idb.IdbSupport.Key]]
    * @return observable of key-value pairs
    * @note that values might be undefined if a key doesn't exist !
    */
@@ -96,7 +97,8 @@ class Store[K : W : R : ValidKey, V : W : R](initialName: String, dbRef: Atomic[
 
   /**
    * Updates store records matching keys with entries
-   * @param input records to update - either [[scala.collection.Iterable]] or [[com.viagraphs.idb.IdbSupport.Key]] with entries containing new values
+ *
+   * @param input records to update - either [[scala.collection.Iterable]] or [[com.pragmaxim.idb.IdbSupport.Key]] with entries containing new values
    * @return observable of the updated key-value pairs (the new values)
    */
   def update[I, C[_]](input: C[I])(implicit p: StoreKeyPolicy[I], e: Tx[C]): Observable[(K,V)] = new Request[I, (K,V), C](input, e) {
