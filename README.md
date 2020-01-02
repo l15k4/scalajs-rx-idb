@@ -1,5 +1,6 @@
-#scalajs-rx-idb
+## scalajs-rx-idb
 
+**(Legacy software - not maintained anymore due to many breaking changes in dependencies)**
 
 Indexed Database reactive (Rx) wrapper written in [scala.js][^1] using [monix][^2], [uPickle][^3] and [uTest][^4].
 
@@ -15,21 +16,20 @@ libraryDependencies ++= Seq("com.pragmaxim" %%% "scalajs-rx-idb" % "0.0.9")
 
 Primarily it is trying to be :
 
-##type safe
+### type safe
 
 * thanks to [uPickle][^3] and its Reader/Writer type classes user just declares input/return types and uPickle does the rest. It even allows you to deserialize objects in a type safe manner without knowing what type of object you're gonna get from database (See uPickle's tagged values in sealed hierarchies)
 * a key validation type class doesn't let you store keys of unsupported types
 * there is an abstraction over CRUD operations allowing seamlessly work with both scala collections and idb key ranges over store or index
 
-##user friendly because
+### user friendly because
 
 * there is too much mutability and confusion regarding request result value, versioning, transactions and error handling in IndexedDb API
-* no living soul wants to spend 3 hours trying to reliably check whether a database exists
-* it should prevent lock starvation that I spent literally days to put up with already
+* it should prevent lock starvation which is a common problem of indexeddb
 * it should supervise transaction boundaries. There are a few edge cases though I haven't covered yet, [I asked a question on SO](http://stackoverflow.com/questions/27326698/indexeddb-transaction-auto-commit-behavior-in-edge-cases)  
 * Rx based API has a clean contract by definition
 
-##handling asynchrony, resilience and back-pressure the Rx way because 
+### handling asynchrony, resilience and back-pressure the Rx way because
 
 * IndexedDb API imho leads to inevitable callback hell and I couldn't really say when it crashes and why
 * it makes it easier to implement new features like profiling
@@ -55,7 +55,7 @@ I came to conclusion that IndexedDb is rather a db engine that is meant to be us
   * [After I rewrote API to path dependent style to spare user from having to explicitly specify types all the time][^7] - I found out that I should have probably rewritten the entire application from scratch 
   because due to these unexpected issues **the interface turned out to be a little less self explanatory than I intended it to be, I'd like to rewrite it a little in future** 
 
-## Important API - Store
+### Important API - Store
 
 There is lot to abstract over in regards to querying IDB, especially key autogeneration, key being on value's keypath, KeyRanges, Indexes, operations on Last and First record etc.
 I could use scala Marcos to generate the API based on DB Schema, but unfortunately I decided not to, there are just 4 methods that basically do everything based on type of input. 
@@ -77,7 +77,7 @@ def update[I, C[_]](input: C[I])(implicit p: StoreKeyPolicy[I], e: Tx[C]): Obser
 
 ```
 
-## Examples
+### Examples
 
 * The best place to look at examples is IndexedDbSuite
 * Note that the crud operations accept either anything that is `Iterable` or any `com.pragmaxim.idb.Store.Key`
